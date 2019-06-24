@@ -1,5 +1,5 @@
 image:
-  name: registry.badevops.com/bitbucket-m2-php72:alpha-1
+  name: registry.badevops.com/bitbucket-m2-php71:testsuite-1
   username: $BAREGISTRY_USERNAME
   password: $BAREGISTRY_PASSWORD
 

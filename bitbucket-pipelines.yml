@@ -1,0 +1,96 @@
+image:
+  name: registry.badevops.com/bitbucket-m2-php72:alpha-1
+  username: $BAREGISTRY_USERNAME
+  password: $BAREGISTRY_PASSWORD
+
+definitions:
+  script: &DeployGC
+    - curl -X POST -i $DEPLOYBOTENDPOINT --data 'auth=$BADEPLOYBOTTOKEN&&client=$BACLIENTCODE&env=$DEPLOYENV&branch=$BITBUCKET_BRANCH&BUILD_NO=$BITBUCKET_BUILD_NUMBER'
+  step: &Testsuite
+    name: Run Unit Tests
+    caches:
+      - composer
+    script:
+      - TEST_SUITE=unit
+      - ./dev/travis/before_install.sh
+      - composer install --no-interaction
+      - ./dev/travis/before_script.sh 
+      - test $TEST_SUITE = "functional" && TEST_FILTER='dev/tests/functional/testsuites/Magento/Mtf/TestSuite/InjectableTests.php' || true
+      - if [ $TEST_SUITE == "functional" ]; then dev/tests/functional/vendor/phpunit/phpunit/phpunit -c dev/tests/$TEST_SUITE $TEST_FILTER; fi
+      - if [ $TEST_SUITE != "functional" ] && [ $TEST_SUITE != "js" ] && [ $TEST_SUITE != "graphql-api-functional" ]; then phpunit -c dev/tests/$TEST_SUITE $TEST_FILTER; fi
+      - if [ $TEST_SUITE == "js" ]; then grunt $GRUNT_COMMAND; fi
+      - if [ $TEST_SUITE == "graphql-api-functional" ]; then phpunit -c dev/tests/api-functional; fi
+  step: &Build
+    name: Composer install
+    caches:
+      - composer
+    artifacts:
+      - vendor/**
+    script:
+     # - echo "$AUTH" > auth.json
+      - composer install
+  parallel: &Lint
+    - step:
+        name: PHP Mess Detector
+        caches:
+          - composer
+        artifacts:
+          - vendor/**
+        script:
+          - if [ -d "$APPROOT/app/code/BlueAcorn/" ]; then $APPROOT/vendor/phpmd/phpmd/src/bin/phpmd --ignore-violations-on-exit $APPROOT/app/code/BlueAcorn/ text codesize,unusedcode,naming; fi
+          - if [ -d "$APPROOT/vendor/blueacorn/" ]; then $APPROOT/vendor/phpmd/phpmd/src/bin/phpmd --ignore-violations-on-exit $APPROOT/vendor/blueacorn/ text codesize,unusedcode,naming; fi
+
+    - step:
+        name: PHP Copy/Paste Detector
+        caches:
+          - composer
+        artifacts:
+          - vendor/**
+        script:           
+          - if [ -d "$APPROOT/app/code/" ]; then $APPROOT/vendor/bin/phpcpd $APPROOT/app/code/ || true; fi
+          - if [ -d "$APPROOT/vendor/blueacorn/" ]; then $APPROOT/vendor/bin/phpcpd $APPROOT/app/code/ || true; fi
+    - step:
+        name: PHP Linter
+        caches:
+          - composer
+        script:           
+          - if [ -d "$APPROOT/app/code/BlueAcorn/" ]; then find . -wholename "$APPROOT/*app/code/BlueAcorn/*.php" -print0 | xargs -0 -n1 -P8 php -l; fi
+          - if [ -d "$APPROOT/vendor/blueacorn/" ]; then find . -wholename "$APPROOT/*vendor/blueacorn/*.php" -print0 | xargs -0 -n1 -P8 php -l; fi
+
+  caches:
+    composer: vendor
+    node: blueacornui/node_modules
+   
+pipelines:
+  pull-requests:
+    '**':
+      - step: *Build
+      - step: *Testsuite
+      - parallel: *Lint
+  branches:
+    '{feature/*,features/*,bugfix/*}':
+      - step: *Build
+      - step: *Testsuite
+      - parallel: *Lint
+      - step:
+          name: "Deploy to QA-1"
+          deployment: qa-1
+          trigger: manual
+          script: *DeployGC      
+    '{develop,unstable/*}':
+      - step:
+          name: "Deploy to Staging"
+          trigger: manual
+          script:
+            - echo 'staging deployment'
+
+    '{master,deploy/*}':
+      - step:
+          name: "Deploy to Production"
+          trigger: manual
+          script:
+            - echo 'production deployment'
+  default:
+    - step: *Build
+    - step: *Testsuite
+    - parallel: *Lint

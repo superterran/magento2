@@ -75,21 +75,18 @@ pipelines:
       - step:
           name: "Deploy to QA-1"
           deployment: qa-1
-          trigger: manual
           script: *DeployGC      
     '{develop,unstable/*}':
       - step:
           name: "Deploy to Staging"
-          trigger: manual
           script:
             - echo 'staging deployment'
 
     '{master,deploy/*}':
       - step:
           name: "Deploy to Production"
-          trigger: manual
           script:
-            - echo 'production deployment'
+            - echo 'production deployment' 
   default:
     - step: *Build
     - step: *Testsuite

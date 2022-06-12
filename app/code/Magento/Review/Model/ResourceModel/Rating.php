@@ -29,7 +29,7 @@ class Rating extends \Magento\Framework\Model\ResourceModel\Db\AbstractDb
     protected $_storeManager;
 
     /**
-     * @var \Magento\Framework\Module\ModuleManagerInterface
+     * @var \Magento\Framework\Module\Manager
      */
     protected $moduleManager;
 
@@ -44,9 +44,14 @@ class Rating extends \Magento\Framework\Model\ResourceModel\Db\AbstractDb
     private $scopeConfig;
 
     /**
+     * @var Review\Summary
+     */
+    private $_reviewSummary;
+
+    /**
      * @param \Magento\Framework\Model\ResourceModel\Db\Context $context
      * @param \Psr\Log\LoggerInterface $logger
-     * @param \Magento\Framework\Module\ModuleManagerInterface $moduleManager
+     * @param \Magento\Framework\Module\Manager $moduleManager
      * @param \Magento\Store\Model\StoreManagerInterface $storeManager
      * @param Review\Summary $reviewSummary
      * @param string $connectionName
@@ -55,7 +60,7 @@ class Rating extends \Magento\Framework\Model\ResourceModel\Db\AbstractDb
     public function __construct(
         \Magento\Framework\Model\ResourceModel\Db\Context $context,
         \Psr\Log\LoggerInterface $logger,
-        \Magento\Framework\Module\ModuleManagerInterface $moduleManager,
+        \Magento\Framework\Module\Manager $moduleManager,
         \Magento\Store\Model\StoreManagerInterface $storeManager,
         \Magento\Review\Model\ResourceModel\Review\Summary $reviewSummary,
         $connectionName = null,

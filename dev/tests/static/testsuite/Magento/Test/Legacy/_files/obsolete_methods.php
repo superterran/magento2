@@ -1982,8 +1982,8 @@ return [
     ['_escapeDefaultValue', 'Magento\Framework\Code\Generator\EntityAbstract'],
     ['urlEncode', 'Magento\Framework\App\Helper\AbstractHelper', 'Magento\Framework\Url\EncoderInterface::encode'],
     ['urlDecode', 'Magento\Framework\App\Helper\AbstractHelper', 'Magento\Framework\Url\DecoderInterface::decode'],
-    ['isModuleEnabled', 'Magento\Framework\App\Helper\AbstractHelper', '\Magento\Framework\Module\ModuleManagerInterface::isEnabled()'],
-    ['isModuleOutputEnabled', 'Magento\Framework\App\Helper\AbstractHelper', '\Magento\Framework\Module\ModuleManagerInterface::isOutputEnabled()'],
+    ['isModuleEnabled', 'Magento\Framework\App\Helper\AbstractHelper', 'Magento\Framework\Module\Manager::isEnabled()'],
+    ['isModuleOutputEnabled', 'Magento\Framework\App\Helper\AbstractHelper', 'Magento\Framework\Module\Manager::isOutputEnabled()'],
     ['_packToTar', 'Magento\Framework\Archive\Tar'],
     ['_parseHeader', 'Magento\Framework\Archive\Tar'],
     ['getIdentities', 'Magento\Wishlist\Block\Link'],
@@ -2569,4 +2569,6 @@ return [
             'Magento\Framework\MessageQueue\ConsumerInterface'
         ],
     ['isOrderIncrementIdUsed', 'Magento\Quote\Model\ResourceModel\Quote', 'Magento\Sales\Model\OrderIncrementIdChecker::isIncrementIdUsed'],
+    ['update', 'Magento\Authorization\Model\Rules', 'Magento\Authorization\Model\Rules::update'],
+    ['update', 'Magento\Authorization\Model\Role', 'Magento\Authorization\Model\Role::update'],
 ];

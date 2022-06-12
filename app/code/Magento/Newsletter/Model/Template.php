@@ -40,8 +40,8 @@ class Template extends \Magento\Email\Model\AbstractTemplate
     /**
      * Mail object
      *
-     * @deprecated Unused property
-     *
+     * @deprecated 100.3.0 Unused property
+     * @var string
      */
     protected $_mail;
 
@@ -60,8 +60,6 @@ class Template extends \Magento\Email\Model\AbstractTemplate
     protected $_request;
 
     /**
-     * Filter factory
-     *
      * @var \Magento\Newsletter\Model\Template\FilterFactory
      */
     protected $_filterFactory;
@@ -200,9 +198,10 @@ class Template extends \Magento\Email\Model\AbstractTemplate
     {
         $variables['this'] = $this;
 
-        return $this->getTemplateFilter()
-            ->setVariables($variables)
-            ->filter($this->getTemplateSubject());
+        $filter = $this->getTemplateFilter();
+        $filter->setVariables($variables);
+
+        return $filter->filter($this->getTemplateSubject());
     }
 
     /**
@@ -217,7 +216,8 @@ class Template extends \Magento\Email\Model\AbstractTemplate
                 'template_text',
                 __(
                     'Follow this link to unsubscribe <!-- This tag is for unsubscribe link  -->' .
-                    '<a href="{{var subscriber.getUnsubscriptionLink()}}">{{var subscriber.getUnsubscriptionLink()}}' .
+                    '<a href="{{var subscriber_data.unsubscription_link}}">
+                        {{var subscriber_data.unsubscription_link}}' .
                     '</a>'
                 )
             );
@@ -227,6 +227,8 @@ class Template extends \Magento\Email\Model\AbstractTemplate
     }
 
     /**
+     * Return the filter factory
+     *
      * @return \Magento\Newsletter\Model\Template\FilterFactory
      */
     protected function getFilterFactory()

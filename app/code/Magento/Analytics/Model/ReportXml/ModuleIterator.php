@@ -5,7 +5,7 @@
  */
 namespace Magento\Analytics\Model\ReportXml;
 
-use \Magento\Framework\Module\ModuleManagerInterface as ModuleManager;
+use Magento\Framework\Module\Manager as ModuleManager;
 
 /**
  * Iterator for ReportXml modules
@@ -34,6 +34,7 @@ class ModuleIterator extends \IteratorIterator
      *
      * @return array
      */
+    #[\ReturnTypeWillChange]
     public function current()
     {
         $current = parent::current();

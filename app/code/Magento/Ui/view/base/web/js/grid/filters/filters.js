@@ -83,6 +83,10 @@ define([
                         component: 'Magento_Ui/js/grid/filters/range',
                         rangeType: 'date'
                     },
+                    datetimeRange: {
+                        component: 'Magento_Ui/js/grid/filters/range',
+                        rangeType: 'datetime'
+                    },
                     textRange: {
                         component: 'Magento_Ui/js/grid/filters/range',
                         rangeType: 'text'
@@ -120,7 +124,10 @@ define([
          *
          * @returns {Filters} Chainable.
          */
-        initialize: function () {
+        initialize: function (config) {
+            if (typeof config.options !== 'undefined' && config.options.dateFormat) {
+                this.constructor.defaults.templates.filters.dateRange.dateFormat = config.options.dateFormat;
+            }
             _.bindAll(this, 'updateActive');
 
             this._super()
@@ -196,6 +203,7 @@ define([
          * @returns {Filters} Chainable.
          */
         apply: function () {
+            $('body').notification('clear');
             this.set('applied', removeEmpty(this.filters));
 
             return this;
@@ -272,11 +280,22 @@ define([
             }
 
             filter = utils.extend({}, filters.base, filter);
+            //Accepting labels as is.
+            filter.__disableTmpl = {
+                label: 1,
+                options: 1
+            };
 
-            return utils.template(filter, {
+            filter = utils.template(filter, {
                 filters: this,
                 column: column
             }, true, true);
+
+            filter.__disableTmpl = {
+                label: true
+            };
+
+            return filter;
         },
 
         /**
@@ -401,7 +420,7 @@ define([
                          * @param {String} message
                          */
                         insertMethod: function (message) {
-                            var $wrapper = $('<div/>').html(message);
+                            var $wrapper = $('<div></div>').html(message);
 
                             $('.page-main-actions').after($wrapper);
                         }

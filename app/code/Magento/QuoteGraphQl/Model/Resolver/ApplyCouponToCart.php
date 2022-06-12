@@ -61,7 +61,8 @@ class ApplyCouponToCart implements ResolverInterface
         $couponCode = $args['input']['coupon_code'];
 
         $currentUserId = $context->getUserId();
-        $cart = $this->getCartForUser->execute($maskedCartId, $currentUserId);
+        $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
+        $cart = $this->getCartForUser->execute($maskedCartId, $currentUserId, $storeId);
         $cartId = $cart->getId();
 
         /* Check current cart does not have coupon code applied */
@@ -84,6 +85,7 @@ class ApplyCouponToCart implements ResolverInterface
             throw new LocalizedException(__($e->getMessage()), $e);
         }
 
+        $cart = $this->getCartForUser->execute($maskedCartId, $currentUserId, $storeId);
         return [
             'cart' => [
                 'model' => $cart,

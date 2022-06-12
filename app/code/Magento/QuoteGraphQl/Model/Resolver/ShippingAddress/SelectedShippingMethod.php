@@ -3,18 +3,18 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+
 declare(strict_types=1);
 
 namespace Magento\QuoteGraphQl\Model\Resolver\ShippingAddress;
 
-use Magento\Directory\Model\Currency;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
+use Magento\Quote\Model\Cart\ShippingMethodConverter;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Quote\Model\Quote\Address\Rate;
-use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * @inheritdoc
@@ -22,17 +22,16 @@ use Magento\Store\Model\StoreManagerInterface;
 class SelectedShippingMethod implements ResolverInterface
 {
     /**
-     * @var StoreManagerInterface
+     * @var ShippingMethodConverter
      */
-    private $storeManager;
+    private $shippingMethodConverter;
 
     /**
-     * @param StoreManagerInterface $storeManager
+     * @param ShippingMethodConverter $shippingMethodConverter
      */
-    public function __construct(
-        StoreManagerInterface $storeManager
-    ) {
-        $this->storeManager = $storeManager;
+    public function __construct(ShippingMethodConverter $shippingMethodConverter)
+    {
+        $this->shippingMethodConverter = $shippingMethodConverter;
     }
 
     /**
@@ -46,48 +45,45 @@ class SelectedShippingMethod implements ResolverInterface
         /** @var Address $address */
         $address = $value['model'];
         $rates = $address->getAllShippingRates();
-        $carrierTitle = null;
-        $methodTitle = null;
 
-        if (count($rates) > 0 && !empty($address->getShippingMethod())) {
-            list($carrierCode, $methodCode) = explode('_', $address->getShippingMethod(), 2);
-
-            /** @var Rate $rate */
-            foreach ($rates as $rate) {
-                if ($rate->getCode() == $address->getShippingMethod()) {
-                    $carrierTitle = $rate->getCarrierTitle();
-                    $methodTitle = $rate->getMethodTitle();
-                    break;
-                }
-            }
-
-            /** @var Currency $currency */
-            $currency = $this->storeManager->getStore()->getBaseCurrency();
-
-            $data = [
-                'carrier_code' => $carrierCode,
-                'method_code' => $methodCode,
-                'carrier_title' => $carrierTitle,
-                'method_title' => $methodTitle,
-                'amount' => [
-                    'value' => $address->getShippingAmount(),
-                    'currency' => $address->getQuote()->getQuoteCurrencyCode(),
-                ],
-                'base_amount' => [
-                    'value' => $address->getBaseShippingAmount(),
-                    'currency' => $currency->getCode(),
-                ],
-            ];
-        } else {
-            $data = [
-                'carrier_code' => null,
-                'method_code' => null,
-                'carrier_title' => $carrierTitle,
-                'method_title' => $methodTitle,
-                'amount' => null,
-                'base_amount' => null,
-            ];
+        if (!count($rates) || empty($address->getShippingMethod())) {
+            return null;
         }
-        return $data;
+
+        list($carrierCode, $methodCode) = explode('_', $address->getShippingMethod(), 2);
+
+        /** @var Rate $rate */
+        foreach ($rates as $rate) {
+            if ($rate->getCode() === $address->getShippingMethod()) {
+                break;
+            }
+        }
+
+        $cart = $address->getQuote();
+        $selectedShippingMethod = $this->shippingMethodConverter->modelToDataObject(
+            $rate,
+            $cart->getQuoteCurrencyCode()
+        );
+
+        return [
+            'carrier_code' => $carrierCode,
+            'method_code' => $methodCode,
+            'carrier_title' => $selectedShippingMethod->getCarrierTitle() ?? '',
+            'method_title' => $selectedShippingMethod->getMethodTitle() ?? '',
+            'amount' => [
+                'value' => $address->getShippingAmount(),
+                'currency' => $cart->getQuoteCurrencyCode(),
+            ],
+            'price_excl_tax' => [
+                'value' => $selectedShippingMethod->getPriceExclTax(),
+                'currency' => $cart->getQuoteCurrencyCode(),
+            ],
+            'price_incl_tax' => [
+                'value' => $selectedShippingMethod->getPriceInclTax(),
+                'currency' => $cart->getQuoteCurrencyCode(),
+            ],
+            /** @deprecated The field should not be used on the storefront */
+            'base_amount' => null,
+        ];
     }
 }

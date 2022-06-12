@@ -13,6 +13,8 @@ use Magento\Elasticsearch\SearchAdapter\ConnectionManager;
 use Magento\Elasticsearch6\Model\Client\Elasticsearch as ElasticsearchClient;
 use Magento\Elasticsearch\Model\Config;
 use Magento\Elasticsearch\SearchAdapter\SearchIndexNameResolver;
+use Magento\TestModuleCatalogSearch\Model\ElasticsearchVersionChecker;
+use Magento\Framework\Search\EngineResolverInterface;
 
 /**
  * @magentoDbIsolation enabled
@@ -21,6 +23,11 @@ use Magento\Elasticsearch\SearchAdapter\SearchIndexNameResolver;
  */
 class ElasticsearchTest extends \PHPUnit\Framework\TestCase
 {
+    /**
+     * @var string
+     */
+    private $searchEngine;
+
     /**
      * @var ConnectionManager
      */
@@ -51,7 +58,15 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
      */
     private $productRepository;
 
-    protected function setUp()
+    /**
+     * Elasticsearch7 engine configuration is also compatible with OpenSearch 1
+     */
+    private const ENGINE_SUPPORTED_VERSIONS = [
+        7 => 'elasticsearch7',
+        1 => 'elasticsearch7',
+    ];
+
+    protected function setUp(): void
     {
         $objectManager = Bootstrap::getObjectManager();
         $this->connectionManager = $objectManager->create(ConnectionManager::class);
@@ -63,6 +78,22 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
         $indexer = $objectManager->create(Indexer::class);
         $indexer->load('catalogsearch_fulltext');
         $indexer->reindexAll();
+    }
+
+    /**
+     * Make sure that correct engine is set
+     */
+    protected function assertPreConditions(): void
+    {
+        $currentEngine = Bootstrap::getObjectManager()->get(EngineResolverInterface::class)->getCurrentSearchEngine();
+        $this->assertEquals(
+            $this->getInstalledSearchEngine(),
+            $currentEngine,
+            sprintf(
+                'Search engine configuration "%s" is not compatible with the installed version',
+                $currentEngine
+            )
+        );
     }
 
     /**
@@ -95,7 +126,6 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * @magentoConfigFixture default/catalog/search/engine elasticsearch6
      * @magentoConfigFixture current_store catalog/search/elasticsearch_index_prefix composite_product_search
      */
     public function testSearchConfigurableProductBySimpleProductName()
@@ -104,7 +134,6 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * @magentoConfigFixture default/catalog/search/engine elasticsearch6
      * @magentoConfigFixture current_store catalog/search/elasticsearch_index_prefix composite_product_search
      */
     public function testSearchConfigurableProductBySimpleProductAttributeMultiselect()
@@ -113,7 +142,6 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * @magentoConfigFixture default/catalog/search/engine elasticsearch6
      * @magentoConfigFixture current_store catalog/search/elasticsearch_index_prefix composite_product_search
      */
     public function testSearchConfigurableProductBySimpleProductAttributeSelect()
@@ -122,7 +150,6 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * @magentoConfigFixture default/catalog/search/engine elasticsearch6
      * @magentoConfigFixture current_store catalog/search/elasticsearch_index_prefix composite_product_search
      */
     public function testSearchConfigurableProductBySimpleProductAttributeShortDescription()
@@ -145,5 +172,20 @@ class ElasticsearchTest extends \PHPUnit\Framework\TestCase
             }
         }
         return false;
+    }
+
+    /**
+     * Returns installed on server search service
+     *
+     * @return string
+     */
+    private function getInstalledSearchEngine()
+    {
+        if (!$this->searchEngine) {
+            // phpstan:ignore "Class Magento\TestModuleCatalogSearch\Model\ElasticsearchVersionChecker not found."
+            $version = Bootstrap::getObjectManager()->get(ElasticsearchVersionChecker::class)->getVersion();
+            $this->searchEngine = self::ENGINE_SUPPORTED_VERSIONS[$version] ?? 'elasticsearch' . $version;
+        }
+        return $this->searchEngine;
     }
 }

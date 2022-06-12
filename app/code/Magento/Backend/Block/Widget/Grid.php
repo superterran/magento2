@@ -300,10 +300,17 @@ class Grid extends \Magento\Backend\Block\Widget
         if ($this->getCollection()) {
             $field = $column->getFilterIndex() ? $column->getFilterIndex() : $column->getIndex();
             if ($column->getFilterConditionCallback()) {
-                call_user_func($column->getFilterConditionCallback(), $this->getCollection(), $column);
+                $object = isset($column->getFilterConditionCallback()['object'])
+                    ? $column->getFilterConditionCallback()['object'] : $column->getFilterConditionCallback()[0];
+                $method = isset($column->getFilterConditionCallback()['method'])
+                    ? $column->getFilterConditionCallback()['method'] : $column->getFilterConditionCallback()[1];
+                $object->$method(
+                    $this->getCollection(),
+                    $column
+                );
             } else {
                 $condition = $column->getFilter()->getCondition();
-                if ($field && isset($condition)) {
+                if ($field && $condition) {
                     $this->getCollection()->addFieldToFilter($field, $condition);
                 }
             }
@@ -363,7 +370,7 @@ class Grid extends \Magento\Backend\Block\Widget
                 $this->_setFilterValues($data);
             } elseif ($filter && is_array($filter)) {
                 $this->_setFilterValues($filter);
-            } elseif (0 !== sizeof($this->_defaultFilter)) {
+            } elseif (0 !== count($this->_defaultFilter)) {
                 $this->_setFilterValues($this->_defaultFilter);
             }
 

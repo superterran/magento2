@@ -3,7 +3,6 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
-
 declare(strict_types=1);
 
 namespace Magento\Framework\App\Request;
@@ -16,6 +15,8 @@ use Magento\Framework\Phrase;
 
 /**
  * Received request is invalid.
+ *
+ * @api
  */
 class InvalidRequestException extends RuntimeException
 {
@@ -32,7 +33,7 @@ class InvalidRequestException extends RuntimeException
     /**
      * @param ResponseInterface|ResultInterface|NotFoundException $replaceResult
      * Use this result instead of calling an action instance,
-     * if NotFoundException is given the the default 404 mechanism will be triggered.
+     * if NotFoundException is given the default 404 mechanism will be triggered.
      * @param Phrase[]|null $messages Messages to show to client
      * as error messages.
      */
@@ -45,6 +46,8 @@ class InvalidRequestException extends RuntimeException
     }
 
     /**
+     * Return replaced result
+     *
      * @return ResponseInterface|ResultInterface|NotFoundException
      */
     public function getReplaceResult()
@@ -53,6 +56,8 @@ class InvalidRequestException extends RuntimeException
     }
 
     /**
+     * Return messages
+     *
      * @return Phrase[]|null
      */
     public function getMessages(): ?array

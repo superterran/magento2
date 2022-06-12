@@ -3,19 +3,11 @@
  * See COPYING.txt for license details.
  */
 
-(function (factory) {
-    'use strict';
-
-    if (typeof define === 'function' && define.amd) {
-        define([
-            'jquery',
-            'jquery/ui',
-            'mage/validation/validation'
-        ], factory);
-    } else {
-        factory(jQuery);
-    }
-}(function ($) {
+define([
+    'jquery',
+    'jquery-ui-modules/widget',
+    'mage/validation/validation'
+], function ($) {
     'use strict';
 
     $.widget('mage.validation', $.mage.validation, {
@@ -33,7 +25,7 @@
                 if ($(element).hasClass('datetime-picker')) {
                     element = $(element).parent();
 
-                    if (element.parent().find('[generated=true].mage-error').length) {
+                    if (element.parent().find('.mage-error').length) {
                         return;
                     }
                 }
@@ -97,4 +89,4 @@
     });
 
     return $.mage.validation;
-}));
+});

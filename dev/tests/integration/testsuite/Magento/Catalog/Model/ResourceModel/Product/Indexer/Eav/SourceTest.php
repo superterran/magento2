@@ -7,12 +7,16 @@ namespace Magento\Catalog\Model\ResourceModel\Product\Indexer\Eav;
 
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Catalog\Model\Product\Attribute\Source\Status;
+use Magento\Eav\Api\Data\AttributeOptionInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 use Magento\Catalog\_files\MultiselectSourceMock;
+use Magento\Catalog\Api\Data\ProductAttributeInterface;
+use Magento\Store\Model\StoreManagerInterface;
+use Magento\Store\Api\Data\StoreInterface;
 
 /**
- * Class SourceTest
  * @magentoAppIsolation enabled
+ * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  */
 class SourceTest extends \PHPUnit\Framework\TestCase
 {
@@ -35,7 +39,7 @@ class SourceTest extends \PHPUnit\Framework\TestCase
      * Sets up the fixture, for example, opens a network connection.
      * This method is called before a test is executed.
      */
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->source = Bootstrap::getObjectManager()->create(
             \Magento\Catalog\Model\ResourceModel\Product\Indexer\Eav\Source::class
@@ -64,7 +68,7 @@ class SourceTest extends \PHPUnit\Framework\TestCase
 
         /** @var \Magento\Catalog\Model\ResourceModel\Eav\Attribute $attr **/
         $attr = Bootstrap::getObjectManager()->get(\Magento\Eav\Model\Config::class)
-           ->getAttribute('catalog_product', 'test_configurable');
+            ->getAttribute('catalog_product', 'test_configurable');
         $attr->setIsFilterable(1)->save();
 
         $this->_eavIndexerProcessor->reindexAll();
@@ -128,7 +132,7 @@ class SourceTest extends \PHPUnit\Framework\TestCase
 
         /** @var \Magento\Catalog\Model\ResourceModel\Eav\Attribute $attr **/
         $attr = $objectManager->get(\Magento\Eav\Model\Config::class)
-           ->getAttribute('catalog_product', 'multiselect_attribute');
+            ->getAttribute('catalog_product', 'multiselect_attribute');
 
         /** @var $options \Magento\Eav\Model\ResourceModel\Entity\Attribute\Option\Collection */
         $options = $objectManager->create(\Magento\Eav\Model\ResourceModel\Entity\Attribute\Option\Collection::class);
@@ -160,6 +164,42 @@ class SourceTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
+     * Test for indexing product attribute without "all store view" value
+     *
+     * @magentoDataFixture Magento/Catalog/_files/products_with_dropdown_attribute_without_all_store_view.php
+     * @magentoDbIsolation disabled
+     */
+    public function testReindexSelectAttributeWithoutDefault()
+    {
+        $objectManager = Bootstrap::getObjectManager();
+        /** @var StoreInterface $store */
+        $store = $objectManager->get(StoreManagerInterface::class)
+            ->getStore();
+        /** @var \Magento\Catalog\Model\ResourceModel\Eav\Attribute $attribute **/
+        $attribute = $objectManager->get(\Magento\Eav\Model\Config::class)
+            ->getAttribute(ProductAttributeInterface::ENTITY_TYPE_CODE, 'dropdown_without_default');
+        /** @var AttributeOptionInterface $option */
+        $option = $attribute->getOptions()[1];
+        /** @var ProductRepositoryInterface $productRepository */
+        $productRepository = $objectManager->get(ProductRepositoryInterface::class);
+        $product = $productRepository->get('test_attribute_dropdown_without_default', false, 1);
+        $expected = [
+            'entity_id' => $product->getId(),
+            'attribute_id' => $attribute->getId(),
+            'store_id'  => $store->getId(),
+            'value' => $option->getValue(),
+            'source_id' => $product->getId(),
+        ];
+        $connection = $this->productResource->getConnection();
+        $select = $connection->select()->from($this->productResource->getTable('catalog_product_index_eav'))
+            ->where('entity_id = ?', $product->getId())
+            ->where('attribute_id = ?', $attribute->getId());
+
+        $result = $connection->fetchRow($select);
+        $this->assertEquals($expected, $result);
+    }
+
+    /**
      * @magentoDataFixture Magento/Catalog/_files/products_with_multiselect_attribute_with_source_model.php
      * @magentoDbIsolation disabled
      */
@@ -172,7 +212,7 @@ class SourceTest extends \PHPUnit\Framework\TestCase
 
         /** @var \Magento\Catalog\Model\ResourceModel\Eav\Attribute $attr **/
         $attr = $objectManager->get(\Magento\Eav\Model\Config::class)
-           ->getAttribute('catalog_product', 'multiselect_attr_with_source');
+            ->getAttribute('catalog_product', 'multiselect_attr_with_source');
 
         /** @var $sourceModel MultiselectSourceMock */
         $sourceModel = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->create(
@@ -190,8 +230,8 @@ class SourceTest extends \PHPUnit\Framework\TestCase
 
         /** @var \Magento\Catalog\Model\Product $product2 **/
         $product2 = $productRepository->getById($product2Id);
-        $product1->setSpecialFromDate(date('Y-m-d H:i:s'));
-        $product1->setNewsFromDate(date('Y-m-d H:i:s'));
+        $product2->setSpecialFromDate(date('Y-m-d H:i:s'));
+        $product2->setNewsFromDate(date('Y-m-d H:i:s'));
         $productRepository->save($product2);
 
         $this->_eavIndexerProcessor->reindexAll();

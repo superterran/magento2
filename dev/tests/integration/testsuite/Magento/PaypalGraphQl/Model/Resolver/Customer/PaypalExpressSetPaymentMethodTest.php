@@ -7,26 +7,19 @@ declare(strict_types=1);
 
 namespace Magento\PaypalGraphQl\Model\Resolver\Customer;
 
-use Magento\Framework\App\Request\Http;
-use Magento\Framework\Webapi\Request;
+use Magento\Integration\Api\CustomerTokenServiceInterface;
 use Magento\Paypal\Model\Api\Nvp;
-use Magento\PaypalGraphQl\AbstractTest;
+use Magento\PaypalGraphQl\PaypalExpressAbstractTest;
 use Magento\Framework\Serialize\SerializerInterface;
 use Magento\Quote\Model\QuoteIdToMaskedQuoteId;
-use Magento\Framework\UrlInterface;
 
 /**
  * Test ExpressSetPaymentMethodTest graphql endpoint for customer
  *
  * @magentoAppArea graphql
  */
-class PaypalExpressSetPaymentMethodTest extends AbstractTest
+class PaypalExpressSetPaymentMethodTest extends PaypalExpressAbstractTest
 {
-    /**
-     * @var Http
-     */
-    private $request;
-
     /**
      * @var SerializerInterface
      */
@@ -37,11 +30,10 @@ class PaypalExpressSetPaymentMethodTest extends AbstractTest
      */
     private $quoteIdToMaskedId;
 
-    protected function setUp()
+    protected function setUp(): void
     {
         parent::setUp();
 
-        $this->request = $this->objectManager->create(Http::class);
         $this->json = $this->objectManager->get(SerializerInterface::class);
         $this->quoteIdToMaskedId = $this->objectManager->get(QuoteIdToMaskedQuoteId::class);
     }
@@ -53,6 +45,7 @@ class PaypalExpressSetPaymentMethodTest extends AbstractTest
      * @return void
      * @dataProvider getPaypalCodesProvider
      * @magentoConfigFixture default_store paypal/wpp/sandbox_flag 1
+     * @magentoDataFixture Magento/Sales/_files/default_rollback.php
      * @magentoDataFixture Magento/Customer/_files/customer.php
      * @magentoDataFixture Magento/GraphQl/Catalog/_files/simple_product.php
      * @magentoDataFixture Magento/GraphQl/Quote/_files/customer/create_empty_cart.php
@@ -78,19 +71,16 @@ class PaypalExpressSetPaymentMethodTest extends AbstractTest
         $cartId = $cart->getId();
         $maskedCartId = $this->quoteIdToMaskedId->execute((int) $cartId);
 
-        $url = $this->objectManager->get(UrlInterface::class);
-        $baseUrl = $url->getBaseUrl();
-
         $query = <<<QUERY
 mutation {
     createPaypalExpressToken(input: {
         cart_id: "{$maskedCartId}",
         code: "{$paymentMethod}",
         urls: {
-            return_url: "{$baseUrl}paypal/express/return/",
-            cancel_url: "{$baseUrl}paypal/express/cancel/"
-            success_url: "{$baseUrl}checkout/onepage/success/",
-            pending_url: "{$baseUrl}checkout/onepage/pending/"
+            return_url: "paypal/express/return/",
+            cancel_url: "paypal/express/cancel/"
+            success_url: "checkout/onepage/success/",
+            pending_url: "checkout/onepage/pending/"
         }
         express_button: false
     })
@@ -105,7 +95,6 @@ mutation {
     setPaymentMethodOnCart(input: {
         payment_method: {
           code: "{$paymentMethod}",
-          additional_data: {
             paypal_express: {
               payer_id: "$payerId",
               token: "$token"
@@ -114,7 +103,6 @@ mutation {
               payer_id: "$payerId",
               token: "$token"
             }
-          }
         },
         cart_id: "{$maskedCartId}"})
       {
@@ -126,27 +114,21 @@ mutation {
       }
       placeOrder(input: {cart_id: "{$maskedCartId}"}) {
         order {
-          order_id
+          order_number
         }
       }
 }
 QUERY;
 
-        $postData = $this->json->serialize(['query' => $query]);
-        $this->request->setPathInfo('/graphql');
-        $this->request->setMethod('POST');
-        $this->request->setContent($postData);
+        /** @var CustomerTokenServiceInterface $tokenService */
+        $tokenService = $this->objectManager->get(CustomerTokenServiceInterface::class);
+        $customerToken = $tokenService->createCustomerAccessToken('customer@example.com', 'password');
 
-        /** @var \Magento\Integration\Model\Oauth\Token $tokenModel */
-        $tokenModel = $this->objectManager->create(\Magento\Integration\Model\Oauth\Token::class);
-        $customerToken = $tokenModel->createCustomerToken(1)->getToken();
-
-        $webApiRequest = $this->objectManager->get(Request::class);
-        $webApiRequest->getHeaders()
-            ->addHeaderLine('Content-Type', 'application/json')
-            ->addHeaderLine('Accept', 'application/json')
-            ->addHeaderLine('Authorization', 'Bearer ' . $customerToken);
-        $this->request->setHeaders($webApiRequest->getHeaders());
+        $requestHeaders = [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+            'Authorization' => 'Bearer ' . $customerToken
+        ];
 
         $paypalRequest = include __DIR__ . '/../../../_files/customer_paypal_create_token_request.php';
         $paypalResponse = [
@@ -162,33 +144,24 @@ QUERY;
         $paypalRequest['AMT'] = '30.00';
         $paypalRequest['SHIPPINGAMT'] = '10.00';
 
-        $this->nvpMock
-            ->expects($this->at(0))
-            ->method('call')
-            ->with(Nvp::SET_EXPRESS_CHECKOUT, $paypalRequest)
-            ->willReturn($paypalResponse);
-
         $paypalRequestDetails = [
             'TOKEN' => $token,
         ];
 
         $paypalRequestDetailsResponse = include __DIR__ . '/../../../_files/paypal_set_payer_id_repsonse.php';
-
-        $this->nvpMock
-            ->expects($this->at(1))
-            ->method('call')
-            ->with(Nvp::GET_EXPRESS_CHECKOUT_DETAILS, $paypalRequestDetails)
-            ->willReturn($paypalRequestDetailsResponse);
-
         $paypalRequestPlaceOrder = include __DIR__ . '/../../../_files/paypal_place_order_request.php';
-
         $paypalRequestPlaceOrder['EMAIL'] = 'customer@example.com';
 
         $this->nvpMock
-            ->expects($this->at(2))
             ->method('call')
-            ->with(Nvp::DO_EXPRESS_CHECKOUT_PAYMENT, $paypalRequestPlaceOrder)
-            ->willReturn(
+            ->withConsecutive(
+                [Nvp::SET_EXPRESS_CHECKOUT, $paypalRequest],
+                [Nvp::GET_EXPRESS_CHECKOUT_DETAILS, $paypalRequestDetails],
+                [Nvp::DO_EXPRESS_CHECKOUT_PAYMENT, $paypalRequestPlaceOrder]
+            )
+            ->willReturnOnConsecutiveCalls(
+                $paypalResponse,
+                $paypalRequestDetailsResponse,
                 [
                     'RESULT' => '0',
                     'PNREF' => 'B7PPAC033FF2',
@@ -200,11 +173,11 @@ QUERY;
                     'PPREF' => '7RK43642T8939154L',
                     'CORRELATIONID' => $correlationId,
                     'PAYMENTTYPE' => 'instant',
-                    'PENDINGREASON' => 'authorization',
+                    'PENDINGREASON' => 'authorization'
                 ]
             );
 
-        $response = $this->graphqlController->dispatch($this->request);
+        $response = $this->graphQlRequest->send($query, [], '', $requestHeaders);
         $responseData = $this->json->unserialize($response->getContent());
 
         $this->assertArrayHasKey('data', $responseData);
@@ -224,11 +197,11 @@ QUERY;
         );
 
         $this->assertTrue(
-            isset($responseData['data']['placeOrder']['order']['order_id'])
+            isset($responseData['data']['placeOrder']['order']['order_number'])
         );
         $this->assertEquals(
             'test_quote',
-            $responseData['data']['placeOrder']['order']['order_id']
+            $responseData['data']['placeOrder']['order']['order_number']
         );
     }
 

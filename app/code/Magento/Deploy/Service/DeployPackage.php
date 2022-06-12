@@ -134,9 +134,10 @@ class DeployPackage
             } catch (ContentProcessorException $exception) {
                 $errorMessage = __('Compilation from source: ')
                     . $file->getSourcePath()
-                    . PHP_EOL . $exception->getMessage();
+                    . PHP_EOL . $exception->getMessage() . PHP_EOL;
                 $this->errorsCount++;
                 $this->logger->critical($errorMessage);
+                $package->deleteFile($file->getFileId());
             } catch (\Exception $exception) {
                 $this->logger->critical(
                     'Compilation from source ' . $file->getSourcePath() . ' failed' . PHP_EOL . (string)$exception
@@ -203,14 +204,14 @@ class DeployPackage
     private function checkIfCanCopy(PackageFile $file, Package $package, Package $parentPackage = null)
     {
         return $parentPackage
-        && $file->getOrigPackage() !== $package
-        && (
-            $file->getArea() !== $package->getArea()
-            || $file->getTheme() !== $package->getTheme()
-            || $file->getLocale() !== $package->getLocale()
-        )
-        && $file->getOrigPackage() === $parentPackage
-        && $this->deployStaticFile->readFile($file->getDeployedFileId(), $parentPackage->getPath());
+            && $file->getOrigPackage() !== $package
+            && (
+                $file->getArea() !== $package->getArea()
+                || $file->getTheme() !== $package->getTheme()
+                || $file->getLocale() !== $package->getLocale()
+            )
+            && $file->getOrigPackage() === $parentPackage
+            && $this->deployStaticFile->readFile($file->getDeployedFileId(), $parentPackage->getPath());
     }
 
     /**
@@ -223,6 +224,7 @@ class DeployPackage
     private function checkFileSkip($filePath, array $options)
     {
         if ($filePath !== '.') {
+            $filePath = (string)$filePath;
             // phpcs:ignore Magento2.Functions.DiscouragedFunction
             $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
             // phpcs:ignore Magento2.Functions.DiscouragedFunction
@@ -248,23 +250,6 @@ class DeployPackage
      */
     private function register(Package $package, PackageFile $file = null, $skipLogging = false)
     {
-        $logMessage = '.';
-        if ($file) {
-            $logMessage = "Processing file '{$file->getSourcePath()}'";
-            if ($file->getArea()) {
-                $logMessage .= "  for area '{$file->getArea()}'";
-            }
-            if ($file->getTheme()) {
-                $logMessage .= ", theme '{$file->getTheme()}'";
-            }
-            if ($file->getLocale()) {
-                $logMessage .= ", locale '{$file->getLocale()}'";
-            }
-            if ($file->getModule()) {
-                $logMessage .= "module '{$file->getModule()}'";
-            }
-        }
-
         $info = [
             'count' => $this->count,
             'last' => $file ? $file->getSourcePath() : ''
@@ -272,6 +257,23 @@ class DeployPackage
         $this->deployStaticFile->writeTmpFile('info.json', $package->getPath(), json_encode($info));
 
         if (!$skipLogging) {
+            $logMessage = '.';
+            if ($file) {
+                $logMessage = "Processing file '{$file->getSourcePath()}'";
+                if ($file->getArea()) {
+                    $logMessage .= "  for area '{$file->getArea()}'";
+                }
+                if ($file->getTheme()) {
+                    $logMessage .= ", theme '{$file->getTheme()}'";
+                }
+                if ($file->getLocale()) {
+                    $logMessage .= ", locale '{$file->getLocale()}'";
+                }
+                if ($file->getModule()) {
+                    $logMessage .= "module '{$file->getModule()}'";
+                }
+            }
+
             $this->logger->info($logMessage);
         }
     }

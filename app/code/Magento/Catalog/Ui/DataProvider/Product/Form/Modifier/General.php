@@ -3,13 +3,14 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+
 namespace Magento\Catalog\Ui\DataProvider\Product\Form\Modifier;
 
 use Magento\Catalog\Api\Data\ProductAttributeInterface;
 use Magento\Catalog\Model\Locator\LocatorInterface;
 use Magento\Eav\Api\AttributeRepositoryInterface;
-use Magento\Ui\Component\Form;
 use Magento\Framework\Stdlib\ArrayManager;
+use Magento\Ui\Component\Form;
 
 /**
  * Data provider for main panel of product page
@@ -20,21 +21,16 @@ use Magento\Framework\Stdlib\ArrayManager;
 class General extends AbstractModifier
 {
     /**
-     * @var LocatorInterface
+     * @var   LocatorInterface
      * @since 101.0.0
      */
     protected $locator;
 
     /**
-     * @var ArrayManager
+     * @var   ArrayManager
      * @since 101.0.0
      */
     protected $arrayManager;
-
-    /**
-     * @var \Magento\Framework\Locale\CurrencyInterface
-     */
-    private $localeCurrency;
 
     /**
      * @var AttributeRepositoryInterface
@@ -42,8 +38,8 @@ class General extends AbstractModifier
     private $attributeRepository;
 
     /**
-     * @param LocatorInterface $locator
-     * @param ArrayManager $arrayManager
+     * @param LocatorInterface                  $locator
+     * @param ArrayManager                      $arrayManager
      * @param AttributeRepositoryInterface|null $attributeRepository
      */
     public function __construct(
@@ -60,10 +56,10 @@ class General extends AbstractModifier
     /**
      * Customize number fields for advanced price and weight fields.
      *
-     * @since 101.0.0
-     * @param array $data
+     * @param  array $data
      * @return array
      * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @since  101.0.0
      */
     public function modifyData(array $data)
     {
@@ -71,7 +67,10 @@ class General extends AbstractModifier
         $data = $this->customizeAdvancedPriceFormat($data);
         $modelId = $this->locator->getProduct()->getId();
 
-        if (!isset($data[$modelId][static::DATA_SOURCE_DEFAULT][ProductAttributeInterface::CODE_STATUS])) {
+        $productStatus = $this->locator->getProduct()->getStatus();
+        if (!empty($productStatus) && !empty($modelId)) {
+            $data[$modelId][static::DATA_SOURCE_DEFAULT][ProductAttributeInterface::CODE_STATUS] = $productStatus;
+        } elseif (!isset($data[$modelId][static::DATA_SOURCE_DEFAULT][ProductAttributeInterface::CODE_STATUS])) {
             $attributeStatus = $this->attributeRepository->get(
                 ProductAttributeInterface::ENTITY_TYPE_CODE,
                 ProductAttributeInterface::CODE_STATUS
@@ -86,9 +85,9 @@ class General extends AbstractModifier
     /**
      * Customizing weight fields
      *
-     * @param array $data
+     * @param  array $data
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeWeightFormat(array $data)
     {
@@ -111,9 +110,9 @@ class General extends AbstractModifier
     /**
      * Customizing number fields for advanced price
      *
-     * @param array $data
+     * @param  array $data
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeAdvancedPriceFormat(array $data)
     {
@@ -125,7 +124,7 @@ class General extends AbstractModifier
                 $value[ProductAttributeInterface::CODE_TIER_PRICE_FIELD_PRICE] =
                     $this->formatPrice($value[ProductAttributeInterface::CODE_TIER_PRICE_FIELD_PRICE]);
                 $value[ProductAttributeInterface::CODE_TIER_PRICE_FIELD_PRICE_QTY] =
-                    (float) $value[ProductAttributeInterface::CODE_TIER_PRICE_FIELD_PRICE_QTY];
+                    (float)$value[ProductAttributeInterface::CODE_TIER_PRICE_FIELD_PRICE_QTY];
             }
         }
 
@@ -135,9 +134,9 @@ class General extends AbstractModifier
     /**
      * Customize product form fields.
      *
-     * @since 101.0.0
-     * @param array $meta
+     * @param  array $meta
      * @return array
+     * @since  101.0.0
      */
     public function modifyMeta(array $meta)
     {
@@ -153,9 +152,9 @@ class General extends AbstractModifier
     /**
      * Disable collapsible and set empty label
      *
-     * @param array $meta
+     * @param  array $meta
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function prepareFirstPanel(array $meta)
     {
@@ -176,9 +175,9 @@ class General extends AbstractModifier
     /**
      * Customize Status field
      *
-     * @param array $meta
+     * @param  array $meta
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeStatusField(array $meta)
     {
@@ -202,9 +201,9 @@ class General extends AbstractModifier
     /**
      * Customize Weight filed
      *
-     * @param array $meta
+     * @param  array $meta
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeWeightField(array $meta)
     {
@@ -220,10 +219,12 @@ class General extends AbstractModifier
                         'validate-zero-or-greater' => true
                     ],
                     'additionalClasses' => 'admin__field-small',
+                    'sortOrder' => 0,
                     'addafter' => $this->locator->getStore()->getConfig('general/locale/weight_unit'),
                     'imports' => $disabled ? [] : [
                         'disabled' => '!${$.provider}:' . self::DATA_SCOPE_PRODUCT
-                            . '.product_has_weight:value'
+                            . '.product_has_weight:value',
+                        '__disableTmpl' => ['disabled' => false],
                     ]
                 ]
             );
@@ -234,9 +235,15 @@ class General extends AbstractModifier
                 null,
                 'children'
             );
-            $meta = $this->arrayManager->merge($containerPath . static::META_CONFIG_PATH, $meta, [
-                'component' => 'Magento_Ui/js/form/components/group',
-            ]);
+            $meta = $this->arrayManager->merge(
+                $containerPath . static::META_CONFIG_PATH,
+                $meta,
+                [
+                    'label' => false,
+                    'required' => false,
+                    'component' => 'Magento_Ui/js/form/components/group',
+                ]
+            );
 
             $hasWeightPath = $this->arrayManager->slicePath($weightPath, 0, -1) . '/'
                 . ProductAttributeInterface::CODE_HAS_WEIGHT;
@@ -261,6 +268,7 @@ class General extends AbstractModifier
                         ],
                     ],
                     'value' => (int)$this->locator->getProduct()->getTypeInstance()->hasWeight(),
+                    'sortOrder' => 10,
                     'disabled' => $disabled,
                 ]
             );
@@ -272,9 +280,9 @@ class General extends AbstractModifier
     /**
      * Customize "Set Product as New" date fields
      *
-     * @param array $meta
+     * @param  array $meta
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeNewDateRangeField(array $meta)
     {
@@ -309,7 +317,8 @@ class General extends AbstractModifier
                 $fromContainerPath . self::META_CONFIG_PATH,
                 $meta,
                 [
-                    'label' => __('Set Product as New From'),
+                    'label' => false,
+                    'required' => false,
                     'additionalClasses' => 'admin__control-grouped-date',
                     'breakLine' => false,
                     'component' => 'Magento_Ui/js/form/components/group',
@@ -330,9 +339,9 @@ class General extends AbstractModifier
     /**
      * Add links for fields depends of product name
      *
-     * @param array $meta
+     * @param  array $meta
      * @return array
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function customizeNameListeners(array $meta)
     {
@@ -375,58 +384,39 @@ class General extends AbstractModifier
         );
 
         $namePath = $this->arrayManager->findPath(ProductAttributeInterface::CODE_NAME, $meta, null, 'children');
-
-        return $this->arrayManager->merge(
+        $meta = $this->arrayManager->merge(
             $namePath . static::META_CONFIG_PATH,
             $meta,
             [
                 'valueUpdate' => 'keyup'
             ]
         );
+
+        $urlKeyConfig = [
+            'tooltip' => [
+                'link' => 'https://docs.magento.com/user-guide/catalog/catalog-urls.html',
+                'description' => __(
+                    'The URL key should consist of lowercase characters with hyphens to separate words.'
+                ),
+            ],
+        ];
+
+        $urkKeyPath = $this->arrayManager->findPath(
+            ProductAttributeInterface::CODE_SEO_FIELD_URL_KEY,
+            $meta,
+            null,
+            'children'
+        );
+
+        return $this->arrayManager->merge($urkKeyPath . static::META_CONFIG_PATH, $meta, $urlKeyConfig);
     }
 
     /**
-     * The getter function to get the locale currency for real application code
+     * Format number according precision of input
      *
-     * @return \Magento\Framework\Locale\CurrencyInterface
-     *
-     * @deprecated 101.0.0
-     */
-    private function getLocaleCurrency()
-    {
-        if ($this->localeCurrency === null) {
-            $this->localeCurrency = \Magento\Framework\App\ObjectManager::getInstance()
-                ->get(\Magento\Framework\Locale\CurrencyInterface::class);
-        }
-        return $this->localeCurrency;
-    }
-
-    /**
-     * Format price according to the locale of the currency
-     *
-     * @param mixed $value
+     * @param  mixed $value
      * @return string
-     * @since 101.0.0
-     */
-    protected function formatPrice($value)
-    {
-        if (!is_numeric($value)) {
-            return null;
-        }
-
-        $store = $this->locator->getStore();
-        $currency = $this->getLocaleCurrency()->getCurrency($store->getBaseCurrencyCode());
-        $value = $currency->toCurrency($value, ['display' => \Magento\Framework\Currency::NO_SYMBOL]);
-
-        return $value;
-    }
-
-    /**
-     * Format number according to the locale of the currency and precision of input
-     *
-     * @param mixed $value
-     * @return string
-     * @since 101.0.0
+     * @since  101.0.0
      */
     protected function formatNumber($value)
     {
@@ -435,11 +425,6 @@ class General extends AbstractModifier
         }
 
         $value = (float)$value;
-        $precision = strlen(substr(strrchr($value, "."), 1));
-        $store = $this->locator->getStore();
-        $currency = $this->getLocaleCurrency()->getCurrency($store->getBaseCurrencyCode());
-        $value = $currency->toCurrency($value, ['display' => \Magento\Framework\Currency::NO_SYMBOL,
-                                                'precision' => $precision]);
 
         return $value;
     }

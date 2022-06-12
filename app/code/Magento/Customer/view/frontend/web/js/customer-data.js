@@ -11,28 +11,24 @@ define([
     'underscore',
     'ko',
     'Magento_Customer/js/section-config',
+    'mage/url',
     'mage/storage',
     'jquery/jquery-storageapi'
-], function ($, _, ko, sectionConfig) {
+], function ($, _, ko, sectionConfig, url) {
     'use strict';
 
-    var options,
+    var options = {},
         storage,
         storageInvalidation,
         invalidateCacheBySessionTimeOut,
         invalidateCacheByCloseCookieSession,
         dataProvider,
         buffer,
-        customerData;
+        customerData,
+        deferred = $.Deferred();
 
-    //TODO: remove global change, in this case made for initNamespaceStorage
-    $.cookieStorage.setConf({
-        path: '/',
-        expires: 1
-    });
-
-    storage = $.initNamespaceStorage('mage-cache-storage').localStorage;
-    storageInvalidation = $.initNamespaceStorage('mage-cache-storage-section-invalidation').localStorage;
+    url.setBaseUrl(window.BASE_URL);
+    options.sectionLoadUrl = url.build('customer/section/load');
 
     /**
      * @param {Object} invalidateOptions
@@ -42,9 +38,9 @@ define([
 
         if (new Date($.localStorage.get('mage-cache-timeout')) < new Date()) {
             storage.removeAll();
-            date = new Date(Date.now() + parseInt(invalidateOptions.cookieLifeTime, 10) * 1000);
-            $.localStorage.set('mage-cache-timeout', date);
         }
+        date = new Date(Date.now() + parseInt(invalidateOptions.cookieLifeTime, 10) * 1000);
+        $.localStorage.set('mage-cache-timeout', date);
     };
 
     /**
@@ -52,9 +48,10 @@ define([
      */
     invalidateCacheByCloseCookieSession = function () {
         if (!$.cookieStorage.isSet('mage-cache-sessid')) {
-            $.cookieStorage.set('mage-cache-sessid', true);
             storage.removeAll();
         }
+
+        $.cookieStorage.set('mage-cache-sessid', true);
     };
 
     dataProvider = {
@@ -82,7 +79,7 @@ define([
             var parameters;
 
             sectionNames = sectionConfig.filterClientSideSections(sectionNames);
-            parameters = _.isArray(sectionNames) ? {
+            parameters = _.isArray(sectionNames) && sectionNames.indexOf('*') < 0 ? {
                 sections: sectionNames.join(',')
             } : [];
             parameters['force_new_section_timestamp'] = forceNewSectionTimestamp;
@@ -106,7 +103,7 @@ define([
                 storage.remove(sectionName);
                 sectionDataIds = $.cookieStorage.get('section_data_ids') || {};
                 _.each(sectionDataIds, function (data, name) {
-                    if (name != sectionName) { //eslint-disable-line eqeqeq
+                    if (name !== sectionName) {
                         newSectionDataIds[name] = data;
                     }
                 });
@@ -194,34 +191,9 @@ define([
          * Customer data initialization
          */
         init: function () {
-            var countryData,
-                privateContentVersion = 'private_content_version',
-                privateContent = $.cookieStorage.get(privateContentVersion),
-                localPrivateContent = $.localStorage.get(privateContentVersion),
-                needVersion = 'need_version',
-                expiredSectionNames = this.getExpiredSectionNames(),
-                isLoading = false;
+            var expiredSectionNames = this.getExpiredSectionNames();
 
-            if (privateContent &&
-                !$.cookieStorage.isSet(privateContentVersion) &&
-                !$.localStorage.isSet(privateContentVersion)
-            ) {
-                $.cookieStorage.set(privateContentVersion, needVersion);
-                $.localStorage.set(privateContentVersion, needVersion);
-                this.reload([], false);
-                isLoading = true;
-            } else if (localPrivateContent !== privateContent) {
-                if (!$.cookieStorage.isSet(privateContentVersion)) {
-                    privateContent = needVersion;
-                    $.cookieStorage.set(privateContentVersion, privateContent);
-                }
-                $.localStorage.set(privateContentVersion, privateContent);
-                _.each(dataProvider.getFromStorage(storage.keys()), function (sectionData, sectionName) {
-                    buffer.notify(sectionName, sectionData);
-                });
-                this.reload([], false);
-                isLoading = true;
-            } else if (expiredSectionNames.length > 0) {
+            if (expiredSectionNames.length > 0) {
                 _.each(dataProvider.getFromStorage(storage.keys()), function (sectionData, sectionName) {
                     buffer.notify(sectionName, sectionData);
                 });
@@ -236,13 +208,22 @@ define([
                 }
             }
 
-            if (!_.isEmpty(privateContent)) {
-                countryData = this.get('directory-data');
-
-                if (_.isEmpty(countryData()) && !isLoading) {
-                    customerData.reload(['directory-data'], false);
-                }
+            if (!_.isEmpty($.cookieStorage.get('section_data_clean'))) {
+                this.reload(sectionConfig.getSectionNames(), true);
+                $.cookieStorage.set('section_data_clean', '');
             }
+        },
+
+        /**
+         * Storage init
+         */
+        initStorage: function () {
+            $.cookieStorage.setConf({
+                path: '/',
+                expires: new Date(Date.now() + parseInt(options.cookieLifeTime, 10) * 1000)
+            });
+            storage = $.initNamespaceStorage('mage-cache-storage').localStorage;
+            storageInvalidation = $.initNamespaceStorage('mage-cache-storage-section-invalidation').localStorage;
         },
 
         /**
@@ -275,11 +256,14 @@ define([
 
                 if (typeof sectionData === 'undefined' ||
                     typeof sectionData === 'object' &&
-                    cookieSectionTimestamp != sectionData['data_id'] //eslint-disable-line
+                    cookieSectionTimestamp !== sectionData['data_id']
                 ) {
                     expiredSectionNames.push(sectionName);
                 }
             });
+
+            //remove expired section names of previously installed/enable modules
+            expiredSectionNames = _.intersection(expiredSectionNames, sectionConfig.getSectionNames());
 
             return _.uniq(expiredSectionNames);
         },
@@ -328,6 +312,9 @@ define([
         },
 
         /**
+         * Avoid using this function directly 'cause of possible performance drawbacks.
+         * Each customer section reload brings new non-cached ajax request.
+         *
          * @param {Array} sectionNames
          * @param {Boolean} forceNewSectionTimestamp
          * @return {*}
@@ -346,7 +333,9 @@ define([
             var sectionDataIds,
                 sectionsNamesForInvalidation;
 
-            sectionsNamesForInvalidation = _.contains(sectionNames, '*') ? buffer.keys() : sectionNames;
+            sectionsNamesForInvalidation = _.contains(sectionNames, '*') ? sectionConfig.getSectionNames() :
+                sectionNames;
+
             $(document).trigger('customer-data-invalidate', [sectionsNamesForInvalidation]);
             buffer.remove(sectionsNamesForInvalidation);
             sectionDataIds = $.cookieStorage.get('section_data_ids') || {};
@@ -361,14 +350,50 @@ define([
         },
 
         /**
+         * Checks if customer data is initialized.
+         *
+         * @returns {jQuery.Deferred}
+         */
+        getInitCustomerData: function () {
+            return deferred.promise();
+        },
+
+        /**
+         * Reload sections on ajax complete
+         *
+         * @param {Object} jsonResponse
+         * @param {Object} settings
+         */
+        onAjaxComplete: function (jsonResponse, settings) {
+            var sections,
+                redirects;
+
+            if (settings.type.match(/post|put|delete/i)) {
+                sections = sectionConfig.getAffectedSections(settings.url);
+
+                if (sections && sections.length) {
+                    this.invalidate(sections);
+                    redirects = ['redirect', 'backUrl'];
+
+                    if (_.isObject(jsonResponse) && !_.isEmpty(_.pick(jsonResponse, redirects))) { //eslint-disable-line
+                        return;
+                    }
+                    this.reload(sections, true);
+                }
+            }
+        },
+
+        /**
          * @param {Object} settings
          * @constructor
          */
         'Magento_Customer/js/customer-data': function (settings) {
             options = settings;
+            customerData.initStorage();
             invalidateCacheBySessionTimeOut(settings);
             invalidateCacheByCloseCookieSession();
             customerData.init();
+            deferred.resolve();
         }
     };
 
@@ -376,22 +401,7 @@ define([
      * Events listener
      */
     $(document).on('ajaxComplete', function (event, xhr, settings) {
-        var sections,
-            redirects;
-
-        if (settings.type.match(/post|put|delete/i)) {
-            sections = sectionConfig.getAffectedSections(settings.url);
-
-            if (sections) {
-                customerData.invalidate(sections);
-                redirects = ['redirect', 'backUrl'];
-
-                if (_.isObject(xhr.responseJSON) && !_.isEmpty(_.pick(xhr.responseJSON, redirects))) { //eslint-disable-line
-                    return;
-                }
-                customerData.reload(sections, true);
-            }
-        }
+        customerData.onAjaxComplete(xhr.responseJSON, settings);
     });
 
     /**

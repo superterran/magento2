@@ -7,12 +7,15 @@ namespace Magento\NewRelicReporting\Model\Apm;
 
 use \Magento\Framework\HTTP\ZendClient;
 
+/**
+ * Performs the request to make the deployment
+ */
 class Deployments
 {
     /**
      * API URL for New Relic deployments
      */
-    const API_URL = 'https://api.newrelic.com/deployments.xml';
+    private const API_URL = 'https://api.newrelic.com/v2/applications/%s/deployments.json';
 
     /**
      * @var \Magento\NewRelicReporting\Model\Config
@@ -52,31 +55,43 @@ class Deployments
      * @param string $description
      * @param bool $change
      * @param bool $user
+     * @param ?string $revision
      *
      * @return bool|string
      */
-    public function setDeployment($description, $change = false, $user = false)
+    public function setDeployment($description, $change = false, $user = false, $revision = null)
     {
         $apiUrl = $this->config->getNewRelicApiUrl();
-
         if (empty($apiUrl)) {
             $this->logger->notice('New Relic API URL is blank, using fallback URL');
             $apiUrl = self::API_URL;
         }
+
+        $apiUrl = sprintf($apiUrl, $this->config->getNewRelicAppId());
 
         /** @var \Magento\Framework\HTTP\ZendClient $client */
         $client = $this->clientFactory->create();
         $client->setUri($apiUrl);
         $client->setMethod(ZendClient::POST);
 
-        $client->setHeaders(['x-api-key' => $this->config->getNewRelicApiKey()]);
+        $client->setHeaders(
+            [
+                'Api-Key' => $this->config->getNewRelicApiKey(),
+                'Content-Type' => 'application/json'
+            ]
+        );
+
+        if (!$revision) {
+            $revision = hash('sha256', time());
+        }
 
         $params = [
-            'deployment[app_name]'       => $this->config->getNewRelicAppName(),
-            'deployment[application_id]' => $this->config->getNewRelicAppId(),
-            'deployment[description]'    => $description,
-            'deployment[changelog]'      => $change,
-            'deployment[user]'           => $user
+            'deployment' => [
+                'description' => $description,
+                'changelog' => $change,
+                'user' => $user,
+                'revision' => $revision
+            ]
         ];
 
         $client->setParameterPost($params);
@@ -88,7 +103,7 @@ class Deployments
             return false;
         }
 
-        if (($response->getStatus() < 200 || $response->getStatus() > 210)) {
+        if ($response->getStatus() < 200 || $response->getStatus() > 210) {
             $this->logger->warning('Deployment marker request did not send a 200 status code.');
             return false;
         }

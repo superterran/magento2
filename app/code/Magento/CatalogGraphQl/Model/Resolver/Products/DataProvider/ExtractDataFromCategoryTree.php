@@ -10,9 +10,6 @@ namespace Magento\CatalogGraphQl\Model\Resolver\Products\DataProvider;
 use Magento\CatalogGraphQl\Model\Category\Hydrator;
 use Magento\Catalog\Api\Data\CategoryInterface;
 
-/**
- * Extract data from category tree
- */
 class ExtractDataFromCategoryTree
 {
     /**
@@ -48,22 +45,57 @@ class ExtractDataFromCategoryTree
     public function execute(\Iterator $iterator): array
     {
         $tree = [];
+        /** @var CategoryInterface $rootCategory */
+        $rootCategory = $iterator->current();
         while ($iterator->valid()) {
-            /** @var CategoryInterface $category */
-            $category = $iterator->current();
+            /** @var CategoryInterface $currentCategory */
+            $currentCategory = $iterator->current();
             $iterator->next();
-            $pathElements = explode("/", $category->getPath());
-            if (empty($tree)) {
-                $this->startCategoryFetchLevel = count($pathElements) - 1;
+            if ($this->areParentsActive($currentCategory, $rootCategory, (array)$iterator)) {
+                $pathElements = $currentCategory->getPath() !== null ?
+                    explode("/", $currentCategory->getPath()) : [''];
+                if (empty($tree)) {
+                    $this->startCategoryFetchLevel = count($pathElements) - 1;
+                }
+                $this->iteratingCategory = $currentCategory;
+                $currentLevelTree = $this->explodePathToArray($pathElements, $this->startCategoryFetchLevel);
+                if (empty($tree)) {
+                    $tree = $currentLevelTree;
+                }
+                $tree = $this->mergeCategoriesTrees($tree, $currentLevelTree);
             }
-            $this->iteratingCategory = $category;
-            $currentLevelTree = $this->explodePathToArray($pathElements, $this->startCategoryFetchLevel);
-            if (empty($tree)) {
-                $tree = $currentLevelTree;
-            }
-            $tree = $this->mergeCategoriesTrees($currentLevelTree, $tree);
         }
-        return $tree;
+
+        return $this->sortTree($tree);
+    }
+
+    /**
+     * Test that all parents of the current category are active.
+     *
+     * Assumes that $categoriesArray are key-pair values and key is the ID of the category and
+     * all categories in this list are queried as active.
+     *
+     * @param CategoryInterface $currentCategory
+     * @param CategoryInterface $rootCategory
+     * @param array $categoriesArray
+     * @return bool
+     */
+    private function areParentsActive(
+        CategoryInterface $currentCategory,
+        CategoryInterface $rootCategory,
+        array $categoriesArray
+    ): bool {
+        if ($currentCategory === $rootCategory) {
+            return true;
+        } elseif (array_key_exists($currentCategory->getParentId(), $categoriesArray)) {
+            return $this->areParentsActive(
+                $categoriesArray[$currentCategory->getParentId()],
+                $rootCategory,
+                $categoriesArray
+            );
+        } else {
+            return false;
+        }
     }
 
     /**
@@ -106,6 +138,31 @@ class ExtractDataFromCategoryTree
         if (isset($pathElements[$index])) {
             $tree[$pathElements[$currentIndex]]['children'] = $this->explodePathToArray($pathElements, $index);
         }
+        return $tree;
+    }
+
+    /**
+     * Recursive method to sort tree
+     *
+     * @param array $tree
+     * @return array
+     */
+    private function sortTree(array $tree): array
+    {
+        foreach ($tree as &$node) {
+            if ($node['children']) {
+                uasort($node['children'], function ($element1, $element2) {
+                    return ($element1['position'] <=> $element2['position']);
+                });
+                $node['children'] = $this->sortTree($node['children']);
+                if (isset($node['children_count'])) {
+                    $node['children_count'] = count($node['children']);
+                }
+            } elseif (isset($node['children_count'])) {
+                $node['children_count'] = 0;
+            }
+        }
+
         return $tree;
     }
 }

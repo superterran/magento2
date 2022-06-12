@@ -18,38 +18,40 @@ use Magento\Framework\App\ScopeResolverInterface;
  * Query builder for search adapter.
  *
  * @api
- * @since 100.1.0
+ * @since 100.2.2
  */
 class Builder
 {
+    private const ELASTIC_INT_MAX = 2147483647;
+
     /**
      * @var Config
-     * @since 100.1.0
+     * @since 100.2.2
      */
     protected $clientConfig;
 
     /**
      * @var SearchIndexNameResolver
-     * @since 100.1.0
+     * @since 100.2.2
      */
     protected $searchIndexNameResolver;
 
     /**
      * @var AggregationBuilder
-     * @since 100.1.0
+     * @since 100.2.2
      */
     protected $aggregationBuilder;
 
     /**
      * @var ScopeResolverInterface
-     * @since 100.1.0
+     * @since 100.2.2
      */
     protected $scopeResolver;
 
     /**
      * @var Sort
      */
-    protected $sortBuilder;
+    private $sortBuilder;
 
     /**
      * @param Config $clientConfig
@@ -63,7 +65,7 @@ class Builder
         SearchIndexNameResolver $searchIndexNameResolver,
         AggregationBuilder $aggregationBuilder,
         ScopeResolverInterface $scopeResolver,
-        Sort $sortBuilder = null
+        ?Sort $sortBuilder = null
     ) {
         $this->clientConfig = $clientConfig;
         $this->searchIndexNameResolver = $searchIndexNameResolver;
@@ -77,24 +79,25 @@ class Builder
      *
      * @param RequestInterface $request
      * @return array
-     * @since 100.1.0
+     * @since 100.2.2
      */
     public function initQuery(RequestInterface $request)
     {
         $dimension = current($request->getDimensions());
         $storeId = $this->scopeResolver->getScope($dimension->getValue())->getId();
-
         $searchQuery = [
             'index' => $this->searchIndexNameResolver->getIndexName($storeId, $request->getIndex()),
             'type' => $this->clientConfig->getEntityType(),
             'body' => [
-                'from' => $request->getFrom(),
+                'from' => min(self::ELASTIC_INT_MAX, $request->getFrom()),
                 'size' => $request->getSize(),
-                'stored_fields' => ['_id', '_score'],
+                'stored_fields' => '_none_',
+                'docvalue_fields' => ['_id', '_score'],
                 'sort' => $this->sortBuilder->getSort($request),
                 'query' => [],
             ],
         ];
+
         return $searchQuery;
     }
 
@@ -104,7 +107,7 @@ class Builder
      * @param RequestInterface $request
      * @param array $searchQuery
      * @return array
-     * @since 100.1.0
+     * @since 100.2.2
      */
     public function initAggregations(
         RequestInterface $request,

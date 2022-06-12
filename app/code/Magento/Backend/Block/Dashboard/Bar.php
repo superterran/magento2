@@ -5,6 +5,9 @@
  */
 namespace Magento\Backend\Block\Dashboard;
 
+use Magento\Directory\Model\Currency;
+use Magento\Store\Model\Store;
+
 /**
  * Adminhtml dashboard bar block
  *
@@ -18,11 +21,18 @@ class Bar extends \Magento\Backend\Block\Dashboard\AbstractDashboard
     protected $_totals = [];
 
     /**
-     * @var \Magento\Directory\Model\Currency|null
+     * @var Currency|null
      */
     protected $_currentCurrencyCode = null;
 
     /**
+     * @var Currency
+     */
+    private $_currency;
+
+    /**
+     * Get totals
+     *
      * @return array
      */
     public function getTotals()
@@ -31,6 +41,8 @@ class Bar extends \Magento\Backend\Block\Dashboard\AbstractDashboard
     }
 
     /**
+     * Add total
+     *
      * @param string $label
      * @param float $value
      * @param bool $isQuantity
@@ -61,7 +73,7 @@ class Bar extends \Magento\Backend\Block\Dashboard\AbstractDashboard
     /**
      * Setting currency model
      *
-     * @param \Magento\Directory\Model\Currency $currency
+     * @param Currency $currency
      * @return void
      */
     public function setCurrency($currency)
@@ -72,7 +84,8 @@ class Bar extends \Magento\Backend\Block\Dashboard\AbstractDashboard
     /**
      * Retrieve currency model if not set then return currency model for current store
      *
-     * @return \Magento\Directory\Model\Currency
+     * @return Currency
+     * @SuppressWarnings(PHPMD.RequestAwareBlockMethod)
      */
     public function getCurrency()
     {
@@ -90,7 +103,8 @@ class Bar extends \Magento\Backend\Block\Dashboard\AbstractDashboard
                     $this->getRequest()->getParam('group')
                 )->getWebsite()->getBaseCurrency();
             } else {
-                $this->_currentCurrencyCode = $this->_storeManager->getStore()->getBaseCurrency();
+                $this->_currentCurrencyCode = $this->_storeManager->getStore(Store::DEFAULT_STORE_ID)
+                    ->getBaseCurrency();
             }
         }
 

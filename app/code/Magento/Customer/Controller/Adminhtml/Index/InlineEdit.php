@@ -28,7 +28,7 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
      *
      * @see _isAllowed()
      */
-    const ADMIN_RESOURCE = 'Magento_Customer::manage';
+    public const ADMIN_RESOURCE = 'Magento_Customer::manage';
 
     /**
      * @var \Magento\Customer\Api\Data\CustomerInterface
@@ -71,6 +71,11 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
     private $addressRegistry;
 
     /**
+     * @var \Magento\Framework\Escaper
+     */
+    private $escaper;
+
+    /**
      * @param Action\Context $context
      * @param CustomerRepositoryInterface $customerRepository
      * @param \Magento\Framework\Controller\Result\JsonFactory $resultJsonFactory
@@ -78,6 +83,7 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
      * @param \Magento\Framework\Api\DataObjectHelper $dataObjectHelper
      * @param \Psr\Log\LoggerInterface $logger
      * @param AddressRegistry|null $addressRegistry
+     * @param \Magento\Framework\Escaper $escaper
      */
     public function __construct(
         Action\Context $context,
@@ -86,7 +92,8 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
         \Magento\Customer\Model\Customer\Mapper $customerMapper,
         \Magento\Framework\Api\DataObjectHelper $dataObjectHelper,
         \Psr\Log\LoggerInterface $logger,
-        AddressRegistry $addressRegistry = null
+        AddressRegistry $addressRegistry = null,
+        \Magento\Framework\Escaper $escaper = null
     ) {
         $this->customerRepository = $customerRepository;
         $this->resultJsonFactory = $resultJsonFactory;
@@ -94,6 +101,7 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
         $this->dataObjectHelper = $dataObjectHelper;
         $this->logger = $logger;
         $this->addressRegistry = $addressRegistry ?: ObjectManager::getInstance()->get(AddressRegistry::class);
+        $this->escaper = $escaper ?: ObjectManager::getInstance()->get(\Magento\Framework\Escaper::class);
         parent::__construct($context);
     }
 
@@ -128,10 +136,14 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
 
         $postItems = $this->getRequest()->getParam('items', []);
         if (!($this->getRequest()->getParam('isAjax') && count($postItems))) {
-            return $resultJson->setData([
-                'messages' => [__('Please correct the data sent.')],
-                'error' => true,
-            ]);
+            return $resultJson->setData(
+                [
+                    'messages' => [
+                        __('Please correct the data sent.')
+                    ],
+                    'error' => true,
+                ]
+            );
         }
 
         foreach (array_keys($postItems) as $customerId) {
@@ -147,10 +159,12 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
             $this->getEmailNotification()->credentialsChanged($this->getCustomer(), $currentCustomer->getEmail());
         }
 
-        return $resultJson->setData([
-            'messages' => $this->getErrorMessages(),
-            'error' => $this->isErrorExists()
-        ]);
+        return $resultJson->setData(
+            [
+                'messages' => $this->getErrorMessages(),
+                'error' => $this->isErrorExists()
+            ]
+        );
     }
 
     /**
@@ -165,7 +179,7 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
         $addressKeys = preg_grep(
             '/^(' . AttributeRepository::BILLING_ADDRESS_PREFIX . '\w+)/',
             array_keys($data),
-            $isCustomerData
+            (int) $isCustomerData
         );
         $result = array_intersect_key($data, array_flip($addressKeys));
         if ($isCustomerData === null) {
@@ -234,13 +248,16 @@ class InlineEdit extends \Magento\Backend\App\Action implements HttpPostActionIn
             $this->disableAddressValidation($customer);
             $this->customerRepository->save($customer);
         } catch (\Magento\Framework\Exception\InputException $e) {
-            $this->getMessageManager()->addError($this->getErrorWithCustomerId($e->getMessage()));
+            $this->getMessageManager()
+                ->addError($this->getErrorWithCustomerId($this->escaper->escapeHtml($e->getMessage())));
             $this->logger->critical($e);
         } catch (\Magento\Framework\Exception\LocalizedException $e) {
-            $this->getMessageManager()->addError($this->getErrorWithCustomerId($e->getMessage()));
+            $this->getMessageManager()
+                ->addError($this->getErrorWithCustomerId($this->escaper->escapeHtml($e->getMessage())));
             $this->logger->critical($e);
         } catch (\Exception $e) {
-            $this->getMessageManager()->addError($this->getErrorWithCustomerId('We can\'t save the customer.'));
+            $this->getMessageManager()
+                ->addError($this->getErrorWithCustomerId('We can\'t save the customer.'));
             $this->logger->critical($e);
         }
     }

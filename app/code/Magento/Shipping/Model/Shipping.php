@@ -3,6 +3,7 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+
 namespace Magento\Shipping\Model;
 
 use Magento\Framework\App\ObjectManager;
@@ -272,8 +273,9 @@ class Shipping implements RateCollectorInterface
      */
     private function prepareCarrier(string $carrierCode, RateRequest $request): AbstractCarrier
     {
-        /* @var AbstractCarrier $carrier */
-        $carrier = $this->_carrierFactory->createIfActive($carrierCode, $request->getStoreId());
+        $carrier = $this->isShippingCarrierAvailable($carrierCode)
+            ? $this->_carrierFactory->create($carrierCode, $request->getStoreId())
+            : null;
         if (!$carrier) {
             throw new \RuntimeException('Failed to initialize carrier');
         }
@@ -319,14 +321,12 @@ class Shipping implements RateCollectorInterface
                 //Multiple shipments
                 /** @var PackageResult $result */
                 $result = $this->packageResultFactory->create();
-                foreach ($packages as $weight => $packageCount) {
-                    $request->setPackageWeight($weight);
-                    $packageResult = $carrier->collectRates($request);
-                    if (!$packageResult) {
-                        return $this;
-                    } else {
-                        $result->appendPackageResult($packageResult, $packageCount);
-                    }
+                $request->setPackages($packages);
+                $packageResult = $carrier->collectRates($request);
+                if (!$packageResult) {
+                    return $this;
+                } else {
+                    $result->appendPackageResult($packageResult, 1);
                 }
             }
         }
@@ -361,6 +361,7 @@ class Shipping implements RateCollectorInterface
     {
         $allItems = $request->getAllItems();
         $fullItems = [];
+        $weightItems = [];
 
         $maxWeight = (double)$carrier->getConfigData('max_package_weight');
 
@@ -369,6 +370,10 @@ class Shipping implements RateCollectorInterface
             if ($item->getProductType() == \Magento\Catalog\Model\Product\Type::TYPE_BUNDLE
                 && $item->getProduct()->getShipmentType()
             ) {
+                continue;
+            }
+
+            if ($item->getFreeShipping()) {
                 continue;
             }
 
@@ -386,7 +391,7 @@ class Shipping implements RateCollectorInterface
                     : $item->getParentItem()->getQty() * $item->getQty();
             }
 
-            $itemWeight = $item->getWeight();
+            $itemWeight = (float) $item->getWeight();
             if ($item->getIsQtyDecimal()
                 && $item->getProductType() != \Magento\Catalog\Model\Product\Type::TYPE_BUNDLE
             ) {
@@ -426,66 +431,64 @@ class Shipping implements RateCollectorInterface
 
             if (!empty($decimalItems)) {
                 foreach ($decimalItems as $decimalItem) {
-                    $fullItems = array_merge(
-                        $fullItems,
-                        array_fill(0, $decimalItem['qty'] * $qty, $decimalItem['weight'])
+                    $weightItems[] = array_fill(
+                        0,
+                        $decimalItem['qty'] * $qty,
+                        [
+                            'weight' => $decimalItem['weight'],
+                            'price' => $item->getBasePrice()
+                        ]
                     );
                 }
             } else {
-                $fullItems = array_merge($fullItems, array_fill(0, $qty, $itemWeight));
+                $weightItems[] = array_fill(
+                    0,
+                    $qty,
+                    [
+                        'weight' => $itemWeight,
+                        'price' => $item->getBasePrice()
+                    ]
+                );
             }
         }
-        sort($fullItems);
+        $fullItems = array_merge($fullItems, ...$weightItems);
 
         return $this->_makePieces($fullItems, $maxWeight);
     }
 
     /**
-     * Make pieces
+     * Compose order items into packages using first fit decreasing algorithm
      *
-     * Compose packages list based on given items, so that each package is as heavy as possible
-     *
-     * @param array $items
-     * @param float $maxWeight
+     * @param array $orderItems
+     * @param float $maxPackageWeight
      * @return array
      */
-    protected function _makePieces($items, $maxWeight)
+    protected function _makePieces(array $orderItems, float $maxPackageWeight): array
     {
-        $pieces = [];
-        if (!empty($items)) {
-            $sumWeight = 0;
+        $packages = [];
 
-            $reverseOrderItems = $items;
-            arsort($reverseOrderItems);
+        usort($orderItems, function ($a, $b) {
+            return $b['weight'] <=> $a['weight'];
+        });
 
-            foreach ($reverseOrderItems as $key => $weight) {
-                if (!isset($items[$key])) {
-                    continue;
-                }
-                unset($items[$key]);
-                $sumWeight = $weight;
-                foreach ($items as $key => $weight) {
-                    if ($sumWeight + $weight < $maxWeight) {
-                        unset($items[$key]);
-                        $sumWeight += $weight;
-                    } elseif ($sumWeight + $weight > $maxWeight) {
-                        $pieces[] = (string)(double)$sumWeight;
-                        break;
-                    } else {
-                        unset($items[$key]);
-                        $pieces[] = (string)(double)($sumWeight + $weight);
-                        $sumWeight = 0;
-                        break;
-                    }
+        for ($i = 0;; $i++) {
+            if (!count($orderItems)) {
+                break;
+            }
+
+            $packages[$i]['weight'] = 0;
+            $packages[$i]['price'] = 0;
+
+            foreach ($orderItems as $k => $orderItem) {
+                if ($orderItem['weight'] <= $maxPackageWeight - $packages[$i]['weight']) {
+                    $packages[$i]['weight'] += $orderItem['weight'];
+                    $packages[$i]['price'] += $orderItem['price'];
+                    unset($orderItems[$k]);
                 }
             }
-            if ($sumWeight > 0) {
-                $pieces[] = (string)(double)$sumWeight;
-            }
-            $pieces = array_count_values($pieces);
         }
 
-        return $pieces;
+        return $packages;
     }
 
     /**
@@ -532,5 +535,19 @@ class Shipping implements RateCollectorInterface
     {
         $this->_availabilityConfigField = $code;
         return $this;
+    }
+
+    /**
+     * Checks availability of carrier.
+     *
+     * @param string $carrierCode
+     * @return bool
+     */
+    private function isShippingCarrierAvailable(string $carrierCode): bool
+    {
+        return $this->_scopeConfig->isSetFlag(
+            'carriers/' . $carrierCode . '/' . $this->_availabilityConfigField,
+            \Magento\Store\Model\ScopeInterface::SCOPE_STORE
+        );
     }
 }

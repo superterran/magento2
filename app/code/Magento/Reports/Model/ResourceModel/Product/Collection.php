@@ -3,11 +3,12 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+declare(strict_types=1);
 
-/**
- * @author      Magento Core Team <core@magentocommerce.com>
- */
 namespace Magento\Reports\Model\ResourceModel\Product;
+
+use Magento\Catalog\Model\ResourceModel\Product\Collection\ProductLimitationFactory;
+use Magento\Framework\DataObject;
 
 /**
  * Products Report collection.
@@ -65,7 +66,13 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
     protected $quoteResource;
 
     /**
+     * @var DataObject
+     */
+    private $_totals;
+
+    /**
      * Collection constructor.
+     *
      * @param \Magento\Framework\Data\Collection\EntityFactory $entityFactory
      * @param \Psr\Log\LoggerInterface $logger
      * @param \Magento\Framework\Data\Collection\Db\FetchStrategyInterface $fetchStrategy
@@ -76,7 +83,7 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
      * @param \Magento\Catalog\Model\ResourceModel\Helper $resourceHelper
      * @param \Magento\Framework\Validator\UniversalFactory $universalFactory
      * @param \Magento\Store\Model\StoreManagerInterface $storeManager
-     * @param \Magento\Framework\Module\ModuleManagerInterface $moduleManager
+     * @param \Magento\Framework\Module\Manager $moduleManager
      * @param \Magento\Catalog\Model\Indexer\Product\Flat\State $catalogProductFlatState
      * @param \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig
      * @param \Magento\Catalog\Model\Product\OptionFactory $productOptionFactory
@@ -90,7 +97,13 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
      * @param \Magento\Catalog\Model\Product\Type $productType
      * @param \Magento\Quote\Model\ResourceModel\Quote\Collection $quoteResource
      * @param \Magento\Framework\DB\Adapter\AdapterInterface|null $connection
+     * @param ProductLimitationFactory|null $productLimitationFactory
+     * @param \Magento\Framework\EntityManager\MetadataPool|null $metadataPool
+     * @param \Magento\Catalog\Model\Indexer\Category\Product\TableMaintainer|null $tableMaintainer
+     * @param \Magento\Catalog\Model\Indexer\Product\Price\PriceTableResolver|null $priceTableResolver
+     * @param \Magento\Framework\Indexer\DimensionFactory|null $dimensionFactory
      *
+     * @throws \Magento\Framework\Exception\LocalizedException
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -104,7 +117,7 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
         \Magento\Catalog\Model\ResourceModel\Helper $resourceHelper,
         \Magento\Framework\Validator\UniversalFactory $universalFactory,
         \Magento\Store\Model\StoreManagerInterface $storeManager,
-        \Magento\Framework\Module\ModuleManagerInterface $moduleManager,
+        \Magento\Framework\Module\Manager $moduleManager,
         \Magento\Catalog\Model\Indexer\Product\Flat\State $catalogProductFlatState,
         \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
         \Magento\Catalog\Model\Product\OptionFactory $productOptionFactory,
@@ -117,7 +130,12 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
         \Magento\Reports\Model\Event\TypeFactory $eventTypeFactory,
         \Magento\Catalog\Model\Product\Type $productType,
         \Magento\Quote\Model\ResourceModel\Quote\Collection $quoteResource,
-        \Magento\Framework\DB\Adapter\AdapterInterface $connection = null
+        \Magento\Framework\DB\Adapter\AdapterInterface $connection = null,
+        ProductLimitationFactory $productLimitationFactory = null,
+        \Magento\Framework\EntityManager\MetadataPool $metadataPool = null,
+        \Magento\Catalog\Model\Indexer\Category\Product\TableMaintainer $tableMaintainer = null,
+        \Magento\Catalog\Model\Indexer\Product\Price\PriceTableResolver $priceTableResolver = null,
+        \Magento\Framework\Indexer\DimensionFactory $dimensionFactory = null
     ) {
         $this->setProductEntityId($product->getEntityIdField());
         $this->setProductEntityTableName($product->getEntityTable());
@@ -142,7 +160,12 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
             $customerSession,
             $dateTime,
             $groupManagement,
-            $connection
+            $connection,
+            $productLimitationFactory,
+            $metadataPool,
+            $tableMaintainer,
+            $priceTableResolver,
+            $dimensionFactory
         );
         $this->_eventTypeFactory = $eventTypeFactory;
         $this->_productType = $productType;
@@ -318,6 +341,7 @@ class Collection extends \Magento\Catalog\Model\ResourceModel\Product\Collection
          * Getting event type id for catalog_product_view event
          */
         $eventTypes = $this->_eventTypeFactory->create()->getCollection();
+        $productViewEvent = null;
         foreach ($eventTypes as $eventType) {
             if ($eventType->getEventName() == 'catalog_product_view') {
                 $productViewEvent = (int)$eventType->getId();

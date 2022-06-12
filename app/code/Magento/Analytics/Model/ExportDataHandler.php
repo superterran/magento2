@@ -8,6 +8,7 @@ namespace Magento\Analytics\Model;
 
 use Magento\Framework\App\Filesystem\DirectoryList;
 use Magento\Framework\Archive;
+use Magento\Framework\Exception\FileSystemException;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Filesystem;
 use Magento\Framework\Filesystem\Directory\WriteInterface;
@@ -89,8 +90,7 @@ class ExportDataHandler implements ExportDataHandlerInterface
     public function prepareExportData()
     {
         try {
-            $tmpDirectory = $this->filesystem->getDirectoryWrite(DirectoryList::SYS_TMP);
-
+            $tmpDirectory = $this->filesystem->getDirectoryWrite(DirectoryList::TMP);
             $this->prepareDirectory($tmpDirectory, $this->getTmpFilesDirRelativePath());
             $this->reportWriter->write($tmpDirectory, $this->getTmpFilesDirRelativePath());
 
@@ -106,8 +106,10 @@ class ExportDataHandler implements ExportDataHandlerInterface
                 $this->cryptographer->encode($tmpDirectory->readFile($this->getArchiveRelativePath()))
             );
         } finally {
-            $tmpDirectory->delete($this->getTmpFilesDirRelativePath());
-            $tmpDirectory->delete($this->getArchiveRelativePath());
+            if (isset($tmpDirectory)) {
+                $tmpDirectory->delete($this->getTmpFilesDirRelativePath());
+                $tmpDirectory->delete($this->getArchiveRelativePath());
+            }
         }
 
         return true;
@@ -157,7 +159,9 @@ class ExportDataHandler implements ExportDataHandlerInterface
     private function prepareFileDirectory(WriteInterface $directory, $path)
     {
         $directory->delete($path);
+        // phpcs:ignore Magento2.Functions.DiscouragedFunction
         if (dirname($path) !== '.') {
+            // phpcs:ignore Magento2.Functions.DiscouragedFunction
             $directory->create(dirname($path));
         }
 
@@ -176,6 +180,7 @@ class ExportDataHandler implements ExportDataHandlerInterface
         $this->archive->pack(
             $source,
             $destination,
+            // phpcs:ignore Magento2.Functions.DiscouragedFunction
             is_dir($source) ?: false
         );
 

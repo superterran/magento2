@@ -18,7 +18,8 @@ define([
     'Magento_Checkout/js/action/set-billing-address',
     'Magento_Ui/js/model/messageList',
     'mage/translate',
-    'Magento_Checkout/js/model/shipping-rates-validator'
+    'Magento_Checkout/js/model/billing-address-postcode-validator',
+    'Magento_Checkout/js/model/address-converter'
 ],
 function (
     ko,
@@ -35,11 +36,14 @@ function (
     setBillingAddressAction,
     globalMessageList,
     $t,
-    shippingRatesValidator
+    billingAddressPostcodeValidator,
+    addressConverter
 ) {
     'use strict';
 
     var lastSelectedBillingAddress = null,
+        addressUpadated = false,
+        addressEdited = false,
         countryData = customerData.get('directory-data'),
         addressOptions = addressList().filter(function (address) {
             return address.getType() === 'customer-address';
@@ -66,7 +70,7 @@ function (
             quote.paymentMethod.subscribe(function () {
                 checkoutDataResolver.resolveBillingAddress();
             }, this);
-            shippingRatesValidator.initFields(this.get('name') + '.form-fields');
+            billingAddressPostcodeValidator.initFields(this.get('name') + '.form-fields');
         },
 
         /**
@@ -140,6 +144,8 @@ function (
         updateAddress: function () {
             var addressData, newBillingAddress;
 
+            addressUpadated = true;
+
             if (this.selectedAddress() && !this.isAddressFormVisible()) {
                 selectBillingAddress(this.selectedAddress());
                 checkoutData.setSelectedBillingAddress(this.selectedAddress().getKey());
@@ -159,13 +165,13 @@ function (
                     }
                     addressData['save_in_address_book'] = this.saveInAddressBook() ? 1 : 0;
                     newBillingAddress = createBillingAddress(addressData);
-
                     // New address must be selected as a billing address
                     selectBillingAddress(newBillingAddress);
                     checkoutData.setSelectedBillingAddress(newBillingAddress.getKey());
                     checkoutData.setNewCustomerBillingAddress(addressData);
                 }
             }
+            setBillingAddressAction(globalMessageList);
             this.updateAddresses();
         },
 
@@ -173,6 +179,8 @@ function (
          * Edit address action
          */
         editAddress: function () {
+            addressUpadated = false;
+            addressEdited = true;
             lastSelectedBillingAddress = quote.billingAddress();
             quote.billingAddress(null);
             this.isAddressDetailsVisible(false);
@@ -182,6 +190,7 @@ function (
          * Cancel address edit action
          */
         cancelAddressEdit: function () {
+            addressUpadated = true;
             this.restoreBillingAddress();
 
             if (quote.billingAddress()) {
@@ -203,11 +212,25 @@ function (
         }),
 
         /**
+         * Check if Billing Address Changes should be canceled
+         */
+        needCancelBillingAddressChanges: function () {
+            if (addressEdited && !addressUpadated) {
+                this.cancelAddressEdit();
+            }
+        },
+
+        /**
          * Restore billing address
          */
         restoreBillingAddress: function () {
+            var lastBillingAddress;
+
             if (lastSelectedBillingAddress != null) {
                 selectBillingAddress(lastSelectedBillingAddress);
+                lastBillingAddress = addressConverter.quoteAddressToFormAddressData(lastSelectedBillingAddress);
+
+                checkoutData.setNewCustomerBillingAddress(lastBillingAddress);
             }
         },
 
@@ -237,6 +260,63 @@ function (
          */
         getCode: function (parent) {
             return _.isFunction(parent.getCode) ? parent.getCode() : 'shared';
+        },
+
+        /**
+         * Get customer attribute label
+         *
+         * @param {*} attribute
+         * @returns {*}
+         */
+        getCustomAttributeLabel: function (attribute) {
+            var label;
+
+            if (typeof attribute === 'string') {
+                return attribute;
+            }
+
+            if (attribute.label) {
+                return attribute.label;
+            }
+
+            if (_.isArray(attribute.value)) {
+                label = _.map(attribute.value, function (value) {
+                    return this.getCustomAttributeOptionLabel(attribute['attribute_code'], value) || value;
+                }, this).join(', ');
+            } else if (typeof attribute.value === 'object') {
+                label = _.map(Object.values(attribute.value)).join(', ');
+            } else {
+                label = this.getCustomAttributeOptionLabel(attribute['attribute_code'], attribute.value);
+            }
+
+            return label || attribute.value;
+        },
+
+        /**
+         * Get option label for given attribute code and option ID
+         *
+         * @param {String} attributeCode
+         * @param {String} value
+         * @returns {String|null}
+         */
+        getCustomAttributeOptionLabel: function (attributeCode, value) {
+            var option,
+                label,
+                options = this.source.get('customAttributes') || {};
+
+            if (options[attributeCode]) {
+                option = _.findWhere(options[attributeCode], {
+                    value: value
+                });
+
+                if (option) {
+                    label = option.label;
+                }
+            } else if (value.file !== null) {
+                label = value.file;
+            }
+
+            return label;
         }
     });
 });

@@ -53,8 +53,8 @@ class Processor
     /**
      * Initialize quote item object
      *
-     * @param DataObject $request
      * @param Product $product
+     * @param DataObject $request
      *
      * @return Item
      */
@@ -96,8 +96,12 @@ class Processor
         }
         $item->addQty($candidate->getCartQty());
 
+        if (!$item->getParentItem() || $item->getParentItem()->isChildrenCalculated()) {
+            $item->setPrice($candidate->getFinalPrice());
+        }
+
         $customPrice = $request->getCustomPrice();
-        if (!empty($customPrice)) {
+        if (!empty($customPrice) && !$candidate->getParentProductId()) {
             $item->setCustomPrice($customPrice);
             $item->setOriginalCustomPrice($customPrice);
         }

@@ -5,11 +5,16 @@
  */
 namespace Magento\Catalog\Model\Category;
 
+use Magento\Catalog\Model\Category\Media\PathResolverFactory;
+use Magento\Catalog\Model\Category\Media\PathResolverInterface;
 use Magento\Framework\App\Filesystem\DirectoryList;
 use Magento\Framework\File\Mime;
 use Magento\Framework\Filesystem;
 use Magento\Framework\Filesystem\Directory\WriteInterface;
 use Magento\Framework\Filesystem\Directory\ReadInterface;
+use Magento\Framework\Exception\NoSuchEntityException;
+use Magento\Framework\Filesystem\ExtendedDriverInterface;
+use Magento\Store\Model\StoreManagerInterface;
 
 /**
  * Class FileInfo
@@ -21,7 +26,7 @@ class FileInfo
     /**
      * Path in /pub/media directory
      */
-    const ENTITY_MEDIA_PATH = '/catalog/category';
+    public const ENTITY_MEDIA_PATH = '/catalog/category';
 
     /**
      * @var Filesystem
@@ -49,15 +54,23 @@ class FileInfo
     private $pubDirectory;
 
     /**
+     * @var \Magento\Store\Model\StoreManagerInterface
+     */
+    private $storeManager;
+
+    /**
      * @param Filesystem $filesystem
      * @param Mime $mime
+     * @param StoreManagerInterface $storeManager
      */
     public function __construct(
         Filesystem $filesystem,
-        Mime $mime
+        Mime $mime,
+        StoreManagerInterface $storeManager
     ) {
         $this->filesystem = $filesystem;
         $this->mime = $mime;
+        $this->storeManager = $storeManager;
     }
 
     /**
@@ -109,11 +122,15 @@ class FileInfo
      */
     public function getMimeType($fileName)
     {
-        $filePath = $this->getFilePath($fileName);
-        $absoluteFilePath = $this->getMediaDirectory()->getAbsolutePath($filePath);
-
-        $result = $this->mime->getMimeType($absoluteFilePath);
-        return $result;
+        if ($this->getMediaDirectory()->getDriver() instanceof ExtendedDriverInterface) {
+            return $this->mediaDirectory->getDriver()->getMetadata($fileName)['mimetype'];
+        } else {
+            return $this->mime->getMimeType(
+                $this->getMediaDirectory()->getAbsolutePath(
+                    $this->getFilePath($fileName)
+                )
+            );
+        }
     }
 
     /**
@@ -152,7 +169,8 @@ class FileInfo
      */
     private function getFilePath($fileName)
     {
-        $filePath = ltrim($fileName, '/');
+        $filePath = $this->removeStorePath($fileName);
+        $filePath = ltrim($filePath, '/');
 
         $mediaDirectoryRelativeSubpath = $this->getMediaDirectoryPathRelativeToBaseDirectoryPath($filePath);
         $isFileNameBeginsWithMediaDirectoryPath = $this->isBeginsWithMediaDirectoryPath($fileName);
@@ -177,12 +195,37 @@ class FileInfo
      */
     public function isBeginsWithMediaDirectoryPath($fileName)
     {
-        $filePath = ltrim($fileName, '/');
+        $filePath = $this->removeStorePath($fileName);
+        $filePath = ltrim($filePath, '/');
 
         $mediaDirectoryRelativeSubpath = $this->getMediaDirectoryPathRelativeToBaseDirectoryPath($filePath);
-        $isFileNameBeginsWithMediaDirectoryPath = strpos($filePath, $mediaDirectoryRelativeSubpath) === 0;
+        $isFileNameBeginsWithMediaDirectoryPath = strpos($filePath, (string) $mediaDirectoryRelativeSubpath) === 0;
 
         return $isFileNameBeginsWithMediaDirectoryPath;
+    }
+
+    /**
+     * Clean store path in case if it's exists
+     *
+     * @param string $path
+     * @return string
+     */
+    private function removeStorePath(string $path): string
+    {
+        $result = $path;
+        try {
+            $storeUrl = $this->storeManager->getStore()->getBaseUrl() ?? '';
+        } catch (NoSuchEntityException $e) {
+            return $result;
+        }
+        // phpcs:ignore Magento2.Functions.DiscouragedFunction
+        $path = parse_url($path, PHP_URL_PATH);
+        // phpcs:ignore Magento2.Functions.DiscouragedFunction
+        $storePath = parse_url($storeUrl, PHP_URL_PATH);
+        $storePath = rtrim($storePath, '/');
+
+        $result = preg_replace('/^' . preg_quote($storePath, '/') . '/', '', $path);
+        return $result;
     }
 
     /**
@@ -201,10 +244,22 @@ class FileInfo
         $mediaDirectoryRelativeSubpath = substr($mediaDirectoryPath, strlen($baseDirectoryPath));
         $pubDirectory = $baseDirectory->getRelativePath($pubDirectoryPath);
 
-        if (strpos($mediaDirectoryRelativeSubpath, $pubDirectory) === 0 && strpos($filePath, $pubDirectory) !== 0) {
+        if ($pubDirectory && strpos($mediaDirectoryRelativeSubpath, $pubDirectory) === 0
+            && strpos($filePath, $pubDirectory) !== 0) {
             $mediaDirectoryRelativeSubpath = substr($mediaDirectoryRelativeSubpath, strlen($pubDirectory));
         }
 
         return $mediaDirectoryRelativeSubpath;
+    }
+
+    /**
+     * Get file relative path to media directory
+     *
+     * @param string $filename
+     * @return string
+     */
+    public function getRelativePathToMediaDirectory(string $filename): string
+    {
+        return $this->getFilePath($filename);
     }
 }

@@ -24,9 +24,9 @@ class Address extends AbstractModel implements OrderAddressInterface, AddressMod
     /**
      * Possible customer address types
      */
-    const TYPE_BILLING = 'billing';
+    public const TYPE_BILLING = 'billing';
 
-    const TYPE_SHIPPING = 'shipping';
+    public const TYPE_SHIPPING = 'shipping';
 
     /**
      * @var \Magento\Sales\Model\Order
@@ -240,7 +240,7 @@ class Address extends AbstractModel implements OrderAddressInterface, AddressMod
         if (is_array($this->getData(OrderAddressInterface::STREET))) {
             return $this->getData(OrderAddressInterface::STREET);
         }
-        return explode(PHP_EOL, $this->getData(OrderAddressInterface::STREET));
+        return explode(PHP_EOL, $this->getData(OrderAddressInterface::STREET) ?? '');
     }
 
     /**
@@ -601,7 +601,7 @@ class Address extends AbstractModel implements OrderAddressInterface, AddressMod
      */
     public function setTelephone($telephone)
     {
-        return $this->setData(OrderAddressInterface::TELEPHONE, $telephone);
+        return $this->setData(OrderAddressInterface::TELEPHONE, trim($telephone ?: ''));
     }
 
     /**
@@ -728,6 +728,18 @@ class Address extends AbstractModel implements OrderAddressInterface, AddressMod
     public function setExtensionAttributes(\Magento\Sales\Api\Data\OrderAddressExtensionInterface $extensionAttributes)
     {
         return $this->_setExtensionAttributes($extensionAttributes);
+    }
+
+    /**
+     * @inheritdoc
+     * @since 102.0.3
+     */
+    public function beforeSave()
+    {
+        if ($this->getEmail() === null) {
+            $this->setEmail($this->getOrder()->getCustomerEmail());
+        }
+        return parent::beforeSave();
     }
 
     //@codeCoverageIgnoreEnd

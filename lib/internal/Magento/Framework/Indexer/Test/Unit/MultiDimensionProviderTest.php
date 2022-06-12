@@ -7,11 +7,13 @@ declare(strict_types=1);
 
 namespace Magento\Framework\Indexer\Test\Unit;
 
-use \Magento\Framework\Indexer\MultiDimensionProvider;
-use \Magento\Framework\Indexer\DimensionProviderInterface;
-use \Magento\Framework\Indexer\Dimension;
+use Magento\Framework\Indexer\Dimension;
+use Magento\Framework\Indexer\DimensionProviderInterface;
+use Magento\Framework\Indexer\MultiDimensionProvider;
+use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\TestCase;
 
-class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
+class MultiDimensionProviderTest extends TestCase
 {
     /**
      * tests that MultiDimensionProvider will return [[]] in case it has no dimension providers
@@ -149,12 +151,11 @@ class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
 
     /**
      * tests that MultiDimensionProvider will throw exception when all dimension providers has nothing to return
-     *
-     * @expectedException \LogicException
-     * @expectedExceptionMessage Can`t multiple dimensions because some of them are empty.
      */
     public function testMultiDimensionProviderWithEmptyDataProvider()
     {
+        $this->expectException('LogicException');
+        $this->expectExceptionMessage('Can`t multiple dimensions because some of them are empty.');
         // collect actual dimensions
         $multiDimensionProvider = new MultiDimensionProvider(
             [
@@ -171,13 +172,11 @@ class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
 
     /**
      * tests that MultiDimensionProvider will throw exception when one dimension providers has nothing to return
-     *
-     * @expectedException \LogicException
-     * @expectedExceptionMessage Can`t multiple dimensions because some of them are empty.
      */
     public function testMultiDimensionProviderWithMixedDataProvider()
     {
-
+        $this->expectException('LogicException');
+        $this->expectExceptionMessage('Can`t multiple dimensions because some of them are empty.');
         // prepare expected dimensions
         $dimensionXData = [
             $this->getDimensionMock('x', '1'),
@@ -210,6 +209,11 @@ class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
         }
     }
 
+    /**
+     * @param $dimensions
+     *
+     * @return MockObject
+     */
     private function getDimensionProviderMock($dimensions)
     {
         $dimensionProviderMock = $this->getMockBuilder(DimensionProviderInterface::class)
@@ -217,22 +221,26 @@ class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
             ->disableOriginalClone()
             ->disableArgumentCloning()
             ->disallowMockingUnknownTypes()
-            ->setMethods(['getIterator'])
+            ->onlyMethods(['getIterator'])
             ->getMockForAbstractClass();
 
         $dimensionProviderMock->expects($this->any())
             ->method('getIterator')
-            ->will(
-                $this->returnCallback(
-                    function () use ($dimensions) {
-                        return \SplFixedArray::fromArray($dimensions);
-                    }
-                )
+            ->willReturnCallback(
+                function () use ($dimensions) {
+                    return new \ArrayIterator($dimensions);
+                }
             );
 
         return $dimensionProviderMock;
     }
 
+    /**
+     * @param string $name
+     * @param string $value
+     *
+     * @return MockObject
+     */
     private function getDimensionMock(string $name, string $value)
     {
         $dimensionMock = $this->getMockBuilder(Dimension::class)
@@ -240,7 +248,7 @@ class MultiDimensionProviderTest extends \PHPUnit\Framework\TestCase
             ->disableOriginalClone()
             ->disableArgumentCloning()
             ->disallowMockingUnknownTypes()
-            ->setMethods(['getName', 'getValue'])
+            ->onlyMethods(['getName', 'getValue'])
             ->getMock();
 
         $dimensionMock->expects($this->any())

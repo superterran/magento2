@@ -32,7 +32,7 @@ class CartTotalRepositoryTest extends WebapiAbstract
      */
     private $filterBuilder;
 
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->objectManager = \Magento\TestFramework\Helper\Bootstrap::getObjectManager();
         $this->searchCriteriaBuilder = $this->objectManager->create(
@@ -74,11 +74,12 @@ class CartTotalRepositoryTest extends WebapiAbstract
     }
 
     /**
-     * @expectedException \Exception
-     * @expectedExceptionMessage No such entity
      */
     public function testGetTotalsWithAbsentQuote()
     {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('No such entity');
+
         $cartId = 9999999999;
         $requestData = ['cartId' => $cartId];
         $this->_webApiCall($this->getServiceInfoForTotalsService($cartId), $requestData);
@@ -115,7 +116,7 @@ class CartTotalRepositoryTest extends WebapiAbstract
     {
         foreach ($data as $key => $field) {
             if (is_numeric($field)) {
-                $data[$key] = round($field, 1);
+                $data[$key] = round((float) $field, 1);
                 if ($data[$key] === null) {
                     $data[$key] = 0.0;
                 }

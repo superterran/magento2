@@ -50,8 +50,9 @@ class ProductAttributeTypeTest extends GraphQlAbstract
     {
       attribute_code
       attribute_type
-      entity_type      
-    } 
+      entity_type
+      input_type
+    }
   }
  }
 QUERY;
@@ -71,7 +72,9 @@ QUERY;
             \Magento\Catalog\Api\Data\ProductInterface::class
         ];
         $attributeTypes = ['String', 'Int', 'Float','Boolean', 'Float'];
-        $this->assertAttributeType($attributeTypes, $expectedAttributeCodes, $entityType, $response);
+        $inputTypes = ['textarea', 'select', 'price', 'boolean', 'price'];
+
+        $this->assertAttributeType($attributeTypes, $expectedAttributeCodes, $entityType, $inputTypes, $response);
     }
 
     /**
@@ -121,8 +124,15 @@ QUERY;
     {
       attribute_code
       attribute_type
-      entity_type      
-    } 
+      entity_type
+      input_type
+      storefront_properties {
+         use_in_product_listing
+         use_in_layered_navigation
+         use_in_search_results_layered_navigation
+         visible_on_catalog_pages
+      }
+    }
   }
  }
 QUERY;
@@ -154,7 +164,22 @@ QUERY;
             'CustomerDataRegionInterface',
             'ProductMediaGallery'
         ];
-        $this->assertAttributeType($attributeTypes, $expectedAttributeCodes, $entityTypes, $response);
+        $inputTypes = [
+            'select',
+            'multiselect',
+            'select',
+            'select',
+            'text',
+            'text',
+            'gallery'
+        ];
+        $this->assertComplexAttributeType(
+            $attributeTypes,
+            $expectedAttributeCodes,
+            $entityTypes,
+            $inputTypes,
+            $response
+        );
     }
 
     /**
@@ -187,8 +212,8 @@ QUERY;
     {
       attribute_code
       attribute_type
-      entity_type      
-    } 
+      entity_type
+    }
   }
  }
 QUERY;
@@ -213,22 +238,84 @@ QUERY;
      * @param array $attributeTypes
      * @param array $expectedAttributeCodes
      * @param array $entityTypes
+     * @param array $inputTypes
      * @param array $actualResponse
      * @SuppressWarnings(PHPMD.UnusedLocalVariable)
      */
-    private function assertAttributeType($attributeTypes, $expectedAttributeCodes, $entityTypes, $actualResponse)
-    {
+    private function assertComplexAttributeType(
+        $attributeTypes,
+        $expectedAttributeCodes,
+        $entityTypes,
+        $inputTypes,
+        $actualResponse
+    ) {
         $attributeMetaDataItems = array_map(null, $actualResponse['customAttributeMetadata']['items'], $attributeTypes);
 
         foreach ($attributeMetaDataItems as $itemIndex => $itemArray) {
-            $this->assertResponseFields(
-                $attributeMetaDataItems[$itemIndex][0],
-                [
-                    "attribute_code" => $expectedAttributeCodes[$itemIndex],
-                    "attribute_type" =>$attributeTypes[$itemIndex],
-                    "entity_type" => $entityTypes[$itemIndex]
-                ]
-            );
+            if ($itemArray[0]['entity_type'] === 'catalog_category'
+                || $itemArray[0]['entity_type'] ==='catalog_product') {
+                $this->assertResponseFields(
+                    $attributeMetaDataItems[$itemIndex][0],
+                    [
+                        "attribute_code" => $expectedAttributeCodes[$itemIndex],
+                        "attribute_type" => $attributeTypes[$itemIndex],
+                        "entity_type" => $entityTypes[$itemIndex],
+                        "input_type" => $inputTypes[$itemIndex],
+                        "storefront_properties" => [
+                            'use_in_product_listing' => false,
+                            'use_in_layered_navigation' => 'NO',
+                            'use_in_search_results_layered_navigation' => false,
+                            'visible_on_catalog_pages' => false,
+                        ]
+                    ]
+                );
+            } else {
+                $this->assertNotEmpty($attributeMetaDataItems[$itemIndex][0]['storefront_properties']);
+                // 5 fields are present
+                $this->assertCount(4, $attributeMetaDataItems[$itemIndex][0]['storefront_properties']);
+                unset($attributeMetaDataItems[$itemIndex][0]['storefront_properties']);
+                $this->assertResponseFields(
+                    $attributeMetaDataItems[$itemIndex][0],
+                    [
+                        "attribute_code" => $expectedAttributeCodes[$itemIndex],
+                        "attribute_type" => $attributeTypes[$itemIndex],
+                        "entity_type" => $entityTypes[$itemIndex],
+                        "input_type" => $inputTypes[$itemIndex]
+                    ]
+                );
+
+            }
+
+        }
+    }
+
+    /**
+     * @param array $attributeTypes
+     * @param array $expectedAttributeCodes
+     * @param array $entityTypes
+     * @param array $inputTypes
+     * @param array $actualResponse
+     * @SuppressWarnings(PHPMD.UnusedLocalVariable)
+     */
+    private function assertAttributeType(
+        $attributeTypes,
+        $expectedAttributeCodes,
+        $entityTypes,
+        $inputTypes,
+        $actualResponse
+    ) {
+        $attributeMetaDataItems = array_map(null, $actualResponse['customAttributeMetadata']['items'], $attributeTypes);
+
+        foreach ($attributeMetaDataItems as $itemIndex => $itemArray) {
+                $this->assertResponseFields(
+                    $attributeMetaDataItems[$itemIndex][0],
+                    [
+                        "attribute_code" => $expectedAttributeCodes[$itemIndex],
+                        "attribute_type" => $attributeTypes[$itemIndex],
+                        "entity_type" => $entityTypes[$itemIndex],
+                        "input_type" => $inputTypes[$itemIndex]
+                    ]
+                );
         }
     }
 }

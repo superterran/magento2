@@ -8,6 +8,8 @@ namespace Magento\Catalog\Model\ResourceModel\Product\Indexer\Eav;
 use Magento\Catalog\Model\Product\Attribute\Source\Status as ProductStatus;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Api\Data\ProductAttributeInterface;
+use Magento\Framework\DB\Select;
+use Magento\Framework\DB\Sql\UnionExpression;
 
 /**
  * Catalog Product Eav Select and Multiply Select Attributes Indexer resource model
@@ -16,7 +18,7 @@ use Magento\Catalog\Api\Data\ProductAttributeInterface;
  */
 class Source extends AbstractEav
 {
-    const TRANSIT_PREFIX = 'transit_';
+    public const TRANSIT_PREFIX = 'transit_';
 
     /**
      * Catalog resource helper
@@ -103,7 +105,7 @@ class Source extends AbstractEav
         );
 
         if ($multiSelect == true) {
-            $select->where('ea.backend_type = ?', 'varchar')->where('ea.frontend_input = ?', 'multiselect');
+            $select->where('ea.backend_type = ?', 'text')->where('ea.frontend_input = ?', 'multiselect');
         } else {
             $select->where('ea.backend_type = ?', 'int')->where('ea.frontend_input IN( ? )', ['select', 'boolean']);
         }
@@ -199,13 +201,52 @@ class Source extends AbstractEav
                 'dd.attribute_id',
                 's.store_id',
                 'value' => new \Zend_Db_Expr('COALESCE(ds.value, dd.value)'),
-                'cpe.entity_id',
+                'cpe.entity_id AS source_id',
             ]
         );
 
         if ($entityIds !== null) {
             $ids = implode(',', array_map('intval', $entityIds));
+            $selectWithoutDefaultStore = $connection->select()->from(
+                ['wd' => $this->getTable('catalog_product_entity_int')],
+                [
+                    'cpe.entity_id',
+                    'attribute_id',
+                    'store_id',
+                    'value',
+                    'cpe.entity_id',
+                ]
+            )->joinLeft(
+                ['cpe' => $this->getTable('catalog_product_entity')],
+                "cpe.{$productIdField} = wd.{$productIdField}",
+                []
+            )->joinLeft(
+                ['d2d' => $this->getTable('catalog_product_entity_int')],
+                sprintf(
+                    "d2d.store_id = 0 AND d2d.{$productIdField} = wd.{$productIdField} AND d2d.attribute_id = %s",
+                    $this->_eavConfig->getAttribute(\Magento\Catalog\Model\Product::ENTITY, 'status')->getId()
+                ),
+                []
+            )->joinLeft(
+                ['d2s' => $this->getTable('catalog_product_entity_int')],
+                "d2s.store_id != 0 AND d2s.attribute_id = d2d.attribute_id AND " .
+                "d2s.{$productIdField} = d2d.{$productIdField}",
+                []
+            )
+                ->where((new \Zend_Db_Expr('COALESCE(d2s.value, d2d.value)')) . ' = ' . ProductStatus::STATUS_ENABLED)
+                ->where("wd.attribute_id IN({$attrIdsFlat})")
+                ->where('wd.value IS NOT NULL')
+                ->where('wd.store_id != 0')
+                ->where("cpe.entity_id IN({$ids})");
             $select->where("cpe.entity_id IN({$ids})");
+            $selects = new UnionExpression(
+                [$select, $selectWithoutDefaultStore],
+                Select::SQL_UNION,
+                '( %s )'
+            );
+
+            $select = $connection->select();
+            $select->from(['u' => $selects]);
         }
 
         /**
@@ -262,14 +303,14 @@ class Source extends AbstractEav
         // prepare get multiselect values query
         $productValueExpression = $connection->getCheckSql('pvs.value_id > 0', 'pvs.value', 'pvd.value');
         $select = $connection->select()->from(
-            ['pvd' => $this->getTable('catalog_product_entity_varchar')],
+            ['pvd' => $this->getTable('catalog_product_entity_text')],
             []
         )->join(
             ['cs' => $this->getTable('store')],
             '',
             []
         )->joinLeft(
-            ['pvs' => $this->getTable('catalog_product_entity_varchar')],
+            ['pvs' => $this->getTable('catalog_product_entity_text')],
             "pvs.{$productIdField} = pvd.{$productIdField} AND pvs.attribute_id = pvd.attribute_id"
             . ' AND pvs.store_id=cs.store_id',
             []
@@ -342,7 +383,7 @@ class Source extends AbstractEav
             ProductAttributeInterface::ENTITY_TYPE_CODE,
             $criteria
         )->getItems();
-        
+
         $options = [];
         foreach ($attributes as $attribute) {
             $sourceModelOptions = $attribute->getOptions();
@@ -400,7 +441,7 @@ class Source extends AbstractEav
         $data = [];
         $query = $select->query();
         while ($row = $query->fetch()) {
-            $values = explode(',', $row['value']);
+            $values = isset($row['value']) ? explode(',', $row['value']) : [];
             foreach ($values as $valueId) {
                 if (isset($options[$row['attribute_id']][$valueId])) {
                     $data[] = [$row['entity_id'], $row['attribute_id'], $row['store_id'], $valueId, $row['source_id']];

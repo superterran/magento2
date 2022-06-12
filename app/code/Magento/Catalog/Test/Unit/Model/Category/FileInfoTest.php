@@ -3,6 +3,8 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+declare(strict_types=1);
+
 namespace Magento\Catalog\Test\Unit\Model\Category;
 
 use Magento\Catalog\Model\Category\FileInfo;
@@ -11,6 +13,8 @@ use Magento\Framework\File\Mime;
 use Magento\Framework\Filesystem;
 use Magento\Framework\Filesystem\Directory\ReadInterface;
 use Magento\Framework\Filesystem\Directory\WriteInterface;
+use Magento\Store\Model\Store;
+use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -45,11 +49,21 @@ class FileInfoTest extends TestCase
     private $pubDirectory;
 
     /**
+     * @var StoreManagerInterface|MockObject
+     */
+    private $storeManager;
+
+    /**
+     * @var Store|MockObject
+     */
+    private $store;
+
+    /**
      * @var FileInfo
      */
     private $model;
 
-    protected function setUp()
+    protected function setUp(): void
     {
         $this->mediaDirectory = $this->getMockBuilder(WriteInterface::class)
             ->getMockForAbstractClass();
@@ -59,6 +73,16 @@ class FileInfoTest extends TestCase
 
         $this->pubDirectory = $pubDirectory = $this->getMockBuilder(ReadInterface::class)
             ->getMockForAbstractClass();
+
+        $this->store = $this->getMockBuilder(Store::class)
+            ->disableOriginalConstructor()
+            ->getMock();
+        $this->storeManager = $this->getMockBuilder(StoreManagerInterface::class)
+            ->setMethods(['getStore'])
+            ->getMockForAbstractClass();
+        $this->storeManager->expects($this->any())
+            ->method('getStore')
+            ->willReturn($this->store);
 
         $this->filesystem = $this->getMockBuilder(Filesystem::class)
             ->disableOriginalConstructor()
@@ -92,9 +116,13 @@ class FileInfoTest extends TestCase
         $this->pubDirectory->method('getAbsolutePath')
             ->willReturn('/a/b/c/pub/');
 
+        $this->store->method('getBaseUrl')
+            ->willReturn('https://example.com/');
+
         $this->model = new FileInfo(
             $this->filesystem,
-            $this->mime
+            $this->mime,
+            $this->storeManager
         );
     }
 
@@ -104,21 +132,13 @@ class FileInfoTest extends TestCase
         $absoluteFilePath = '/a/b/c/pub/media/catalog/category/filename.ext1';
 
         $expected = 'ext1';
-
-        $this->mediaDirectory->expects($this->at(0))
-            ->method('getAbsolutePath')
-            ->with(null)
-            ->willReturn('/a/b/c/pub/media/');
-
-        $this->mediaDirectory->expects($this->at(1))
-            ->method('getAbsolutePath')
-            ->with(null)
-            ->willReturn('/a/b/c/pub/media/');
-
-        $this->mediaDirectory->expects($this->at(2))
-            ->method('getAbsolutePath')
-            ->with('/catalog/category/filename.ext1')
-            ->willReturn($absoluteFilePath);
+        $this->mediaDirectory->method('getAbsolutePath')
+            ->willReturnMap(
+                [
+                    [null, '/a/b/c/pub/media'],
+                    ['/catalog/category/filename.ext1', $absoluteFilePath]
+                ]
+            );
 
         $this->mime->expects($this->once())
             ->method('getMimeType')
@@ -146,7 +166,7 @@ class FileInfoTest extends TestCase
 
         $result = $this->model->getStat($fileName);
 
-        $this->assertTrue(is_array($result));
+        $this->assertIsArray($result);
         $this->assertArrayHasKey('size', $result);
         $this->assertEquals(1, $result['size']);
     }
@@ -168,6 +188,9 @@ class FileInfoTest extends TestCase
         $this->assertTrue($this->model->isExist($fileName));
     }
 
+    /**
+     * @return array
+     */
     public function isExistProvider()
     {
         return [
@@ -190,6 +213,9 @@ class FileInfoTest extends TestCase
         $this->assertEquals($expected, $this->model->isBeginsWithMediaDirectoryPath($fileName));
     }
 
+    /**
+     * @return array
+     */
     public function isBeginsWithMediaDirectoryPathProvider()
     {
         return [

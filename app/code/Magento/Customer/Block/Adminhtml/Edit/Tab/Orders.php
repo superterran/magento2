@@ -35,6 +35,11 @@ class Orders extends \Magento\Backend\Block\Widget\Grid\Extended
     protected $collectionFactory;
 
     /**
+     * @var \Magento\Framework\View\Element\UiComponent\DataProvider\CollectionFactory
+     */
+    private $_collectionFactory;
+
+    /**
      * @param \Magento\Backend\Block\Template\Context $context
      * @param \Magento\Backend\Helper\Data $backendHelper
      * @param \Magento\Framework\View\Element\UiComponent\DataProvider\CollectionFactory $collectionFactory
@@ -160,7 +165,10 @@ class Orders extends \Magento\Backend\Block\Widget\Grid\Extended
      */
     public function getRowUrl($row)
     {
-        return $this->getUrl('sales/order/view', ['order_id' => $row->getId()]);
+        return $this->getUrl(
+            'sales/order/view',
+            ['order_id' => $row->getId(), 'customer_id' =>  $this->getRequest()->getParam('id')]
+        );
     }
 
     /**

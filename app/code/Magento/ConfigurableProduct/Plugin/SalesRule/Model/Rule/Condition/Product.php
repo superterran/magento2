@@ -10,9 +10,7 @@ namespace Magento\ConfigurableProduct\Plugin\SalesRule\Model\Rule\Condition;
 use Magento\ConfigurableProduct\Model\Product\Type\Configurable;
 
 /**
- * Class Product
- *
- * @package Magento\ConfigurableProduct\Plugin\SalesRule\Model\Rule\Condition
+ * Plugin for Magento\SalesRule\Model\Rule\Condition\Product to apply rules on configurable children
  */
 class Product
 {
@@ -56,7 +54,11 @@ class Product
         $attrCode = $subject->getAttribute();
 
         /* Check for attributes which are not available for configurable products */
-        if ($product->getTypeId() == Configurable::TYPE_CODE && !$product->hasData($attrCode)) {
+        if ($product->getTypeId() == Configurable::TYPE_CODE &&
+            $subject->getAttributeScope() !== 'parent' &&
+            !$product->hasData($attrCode) &&
+            count($model->getChildren())
+        ) {
             /** @var \Magento\Catalog\Model\AbstractModel $childProduct */
             $childProduct = current($model->getChildren())->getProduct();
             if ($childProduct->hasData($attrCode)) {

@@ -7,31 +7,26 @@ declare(strict_types=1);
 
 namespace Magento\CatalogGraphQl\Model\Resolver\Products;
 
-use Magento\Framework\Api\SearchResultsInterface;
+use Magento\Framework\Api\Search\AggregationInterface;
 
 /**
  * Container for a product search holding the item result and the array in the GraphQL-readable product type format.
+ *
+ * @api
  */
 class SearchResult
 {
     /**
-     * @var SearchResultsInterface
-     */
-    private $totalCount;
-
-    /**
      * @var array
      */
-    private $productsSearchResult;
+    private $data;
 
     /**
-     * @param int $totalCount
-     * @param array $productsSearchResult
+     * @param array $data
      */
-    public function __construct(int $totalCount, array $productsSearchResult)
+    public function __construct(array $data)
     {
-        $this->totalCount = $totalCount;
-        $this->productsSearchResult = $productsSearchResult;
+        $this->data = $data;
     }
 
     /**
@@ -41,7 +36,7 @@ class SearchResult
      */
     public function getTotalCount() : int
     {
-        return $this->totalCount;
+        return $this->data['totalCount'] ?? 0;
     }
 
     /**
@@ -51,6 +46,56 @@ class SearchResult
      */
     public function getProductsSearchResult() : array
     {
-        return $this->productsSearchResult;
+        return $this->data['productsSearchResult'] ?? [];
+    }
+
+    /**
+     * Retrieve aggregated search results
+     *
+     * @return AggregationInterface|null
+     */
+    public function getSearchAggregation(): ?AggregationInterface
+    {
+        return $this->data['searchAggregation'] ?? null;
+    }
+
+    /**
+     * Retrieve the page size for the search
+     *
+     * @return int
+     */
+    public function getPageSize(): int
+    {
+        return $this->data['pageSize'] ?? 0;
+    }
+
+    /**
+     * Retrieve the current page for the search
+     *
+     * @return int
+     */
+    public function getCurrentPage(): int
+    {
+        return $this->data['currentPage'] ?? 0;
+    }
+
+    /**
+     * Retrieve total pages for the search
+     *
+     * @return int
+     */
+    public function getTotalPages(): int
+    {
+        return $this->data['totalPages'] ?? 0;
+    }
+
+    /**
+     * Retrieve an array in the format of GraphQL-readable type containing search suggestions.
+     *
+     * @return array
+     */
+    public function getSuggestions() : array
+    {
+        return $this->data['suggestions'] ?? [];
     }
 }

@@ -9,8 +9,6 @@ namespace Magento\GraphQlCache\Model\Plugin\Query;
 
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
-use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
-use Magento\GraphQl\Model\Query\Resolver\Context;
 use Magento\Framework\GraphQl\Query\Resolver\Value;
 use Magento\GraphQlCache\Model\CacheableQueryHandler;
 
@@ -39,34 +37,46 @@ class Resolver
      * @param ResolverInterface $subject
      * @param mixed|Value $resolvedValue
      * @param Field $field
-     * @param Context $context
-     * @param ResolveInfo $info
-     * @param array|null $value
-     * @param array|null $args
      * @return mixed
      * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
     public function afterResolve(
         ResolverInterface $subject,
         $resolvedValue,
-        Field $field,
-        $context,
-        ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        Field $field
     ) {
-        /** Only if array @see \Magento\Framework\GraphQl\Query\Resolver\Value */
-        if (is_array($resolvedValue) && !empty($field->getCache())) {
-            $this->cacheableQueryHandler->handleCacheFromResolverResponse($resolvedValue, $field);
-        } elseif ($resolvedValue instanceof \Magento\Framework\GraphQl\Query\Resolver\Value) {
-            $resolvedValue->then(function () use ($resolvedValue, $field) {
-                if (is_array($resolvedValue->promise->result) && $field) {
-                    $this->cacheableQueryHandler->handleCacheFromResolverResponse(
-                        $resolvedValue->promise->result,
-                        $field
-                    );
-                }
-            });
+        $cacheAnnotation = $field->getCache();
+        if (!empty($cacheAnnotation)) {
+            if (is_array($resolvedValue)) {
+                $this->cacheableQueryHandler->handleCacheFromResolverResponse(
+                    $resolvedValue,
+                    $cacheAnnotation
+                );
+            } elseif ($resolvedValue instanceof Value) {
+                $resolvedValue->then(
+                    function () use ($resolvedValue, $field, $cacheAnnotation) {
+                        if (is_array($resolvedValue->result)) {
+                            $this->cacheableQueryHandler->handleCacheFromResolverResponse(
+                                $resolvedValue->result,
+                                $cacheAnnotation
+                            );
+                        } else {
+                            // case if string or integer we pass in a single array element
+                            $this->cacheableQueryHandler->handleCacheFromResolverResponse(
+                                $resolvedValue->result === null ?
+                                    [] : [$field->getName() => $resolvedValue->result],
+                                $cacheAnnotation
+                            );
+                        }
+                    }
+                );
+            } else {
+                // case if string or integer we pass in a single array element
+                $this->cacheableQueryHandler->handleCacheFromResolverResponse(
+                    $resolvedValue === null ? [] : [$field->getName() => $resolvedValue],
+                    $cacheAnnotation
+                );
+            }
         }
         return $resolvedValue;
     }

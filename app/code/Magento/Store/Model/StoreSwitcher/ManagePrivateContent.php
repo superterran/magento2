@@ -12,6 +12,8 @@ use Magento\Store\Api\Data\StoreInterface;
 
 /**
  * Set private content cookie to have actual local storage data on target store after store switching.
+ *
+ * @SuppressWarnings(PHPMD.CookieAndSessionMisuse)
  */
 class ManagePrivateContent implements StoreSwitcherInterface
 {
@@ -38,11 +40,15 @@ class ManagePrivateContent implements StoreSwitcherInterface
     }
 
     /**
+     * Update version of private content on each store switch.
+     *
      * @param StoreInterface $fromStore store where we came from
      * @param StoreInterface $targetStore store where to go to
      * @param string $redirectUrl original url requested for redirect after switching
+     *
      * @return string redirect url
      * @throws CannotSwitchStoreException
+     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
      */
     public function switch(StoreInterface $fromStore, StoreInterface $targetStore, string $redirectUrl): string
     {
@@ -51,10 +57,11 @@ class ManagePrivateContent implements StoreSwitcherInterface
                 ->setDurationOneYear()
                 ->setPath('/')
                 ->setSecure(false)
-                ->setHttpOnly(false);
+                ->setHttpOnly(false)
+                ->setSameSite('Lax');
             $this->cookieManager->setPublicCookie(
                 \Magento\Framework\App\PageCache\Version::COOKIE_NAME,
-                'should_be_updated',
+                \uniqid('updated-', true),
                 $publicCookieMetadata
             );
         } catch (\Exception $e) {

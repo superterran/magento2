@@ -6,8 +6,12 @@
 
 namespace Magento\Eav\Setup;
 
+use Magento\Eav\Model\AttributeFactory;
+use Magento\Eav\Model\Config;
+use Magento\Eav\Model\Entity\Attribute;
 use Magento\Eav\Model\Entity\Setup\Context;
 use Magento\Eav\Model\Entity\Setup\PropertyMapperInterface;
+use Magento\Eav\Model\ReservedAttributeCheckerInterface;
 use Magento\Eav\Model\ResourceModel\Entity\Attribute\Group\CollectionFactory;
 use Magento\Eav\Model\Validator\Attribute\Code;
 use Magento\Framework\App\CacheInterface;
@@ -27,65 +31,69 @@ use Magento\Framework\Setup\ModuleDataSetupInterface;
 class EavSetup
 {
     /**
-     * Cache
-     *
      * @var CacheInterface
      */
     private $cache;
 
     /**
-     * Attribute group collection factory
-     *
      * @var CollectionFactory
      */
     private $attrGroupCollectionFactory;
 
     /**
-     * Attribute mapper
-     *
      * @var PropertyMapperInterface
      */
     private $attributeMapper;
 
     /**
-     * Setup model
-     *
      * @var ModuleDataSetupInterface
      */
     private $setup;
 
     /**
-     * General Attribute Group Name
-     *
      * @var string
      */
     private $_generalGroupName = 'General';
 
     /**
-     * Default attribute group name to id pairs
-     *
      * @var array
      */
     private $defaultGroupIdAssociations = ['general' => 1];
 
     /**
-     * Default attribute group name
-     *
      * @var string
      */
     private $_defaultGroupName = 'Default';
 
     /**
-     * Default attribute set name
-     *
      * @var string
      */
     private $_defaultAttributeSetName = 'Default';
 
     /**
+     * @var AddOptionToAttribute
+     */
+    private $addAttributeOption;
+
+    /**
      * @var Code
      */
     private $attributeCodeValidator;
+
+    /**
+     * @var ReservedAttributeCheckerInterface
+     */
+    private $reservedAttributeChecker;
+
+    /**
+     * @var AttributeFactory
+     */
+    private $attributeFactory;
+
+    /**
+     * @var Config|null
+     */
+    private $eavConfig;
 
     /**
      * Init
@@ -95,27 +103,40 @@ class EavSetup
      * @param CacheInterface $cache
      * @param CollectionFactory $attrGroupCollectionFactory
      * @param Code|null $attributeCodeValidator
+     * @param AddOptionToAttribute|null $addAttributeOption
+     * @param ReservedAttributeCheckerInterface|null $reservedAttributeChecker
+     * @param AttributeFactory|null $attributeFactory
+     * @param Config|null $eavConfig
+     * @SuppressWarnings(PHPMD.LongVariable)
      */
     public function __construct(
         ModuleDataSetupInterface $setup,
         Context $context,
         CacheInterface $cache,
         CollectionFactory $attrGroupCollectionFactory,
-        Code $attributeCodeValidator = null
+        Code $attributeCodeValidator = null,
+        AddOptionToAttribute $addAttributeOption = null,
+        ReservedAttributeCheckerInterface $reservedAttributeChecker = null,
+        AttributeFactory $attributeFactory = null,
+        Config $eavConfig = null
     ) {
         $this->cache = $cache;
         $this->attrGroupCollectionFactory = $attrGroupCollectionFactory;
         $this->attributeMapper = $context->getAttributeMapper();
         $this->setup = $setup;
-        $this->attributeCodeValidator = $attributeCodeValidator ?: ObjectManager::getInstance()->get(
-            Code::class
-        );
+        $this->addAttributeOption = $addAttributeOption
+            ?? ObjectManager::getInstance()->get(AddOptionToAttribute::class);
+        $this->attributeCodeValidator = $attributeCodeValidator ?? ObjectManager::getInstance()->get(Code::class);
+        $this->reservedAttributeChecker = $reservedAttributeChecker
+            ?? ObjectManager::getInstance()->get(ReservedAttributeCheckerInterface::class);
+        $this->attributeFactory = $attributeFactory ?? ObjectManager::getInstance()->get(AttributeFactory::class);
+        $this->eavConfig = $eavConfig ?? ObjectManager::getInstance()->get(Config::class);
     }
 
     /**
      * Gets setup model.
      *
-     * @deprecated
+     * @deprecated 102.0.0
      * @return ModuleDataSetupInterface
      */
     public function getSetup()
@@ -229,6 +250,7 @@ class EavSetup
             $this->addAttributeSet($code, $this->_defaultAttributeSetName);
         }
         $this->addAttributeGroup($code, $this->_defaultGroupName, $this->_generalGroupName);
+        $this->eavConfig->clear();
 
         return $this;
     }
@@ -567,6 +589,7 @@ class EavSetup
             if (empty($data['attribute_group_code'])) {
                 if (empty($attributeGroupCode)) {
                     // in the following code md5 is not used for security purposes
+                    // phpcs:disable Magento2.Security.InsecureFunction
                     $attributeGroupCode = md5($name);
                 }
                 $data['attribute_group_code'] = $attributeGroupCode;
@@ -589,7 +612,7 @@ class EavSetup
      */
     public function convertToAttributeGroupCode($groupName)
     {
-        return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($groupName)), '-');
+        return trim(preg_replace('/[^a-z0-9]+/', '-', strtolower((string)$groupName)), '-');
     }
 
     /**
@@ -868,62 +891,7 @@ class EavSetup
      */
     public function addAttributeOption($option)
     {
-        $optionTable = $this->setup->getTable('eav_attribute_option');
-        $optionValueTable = $this->setup->getTable('eav_attribute_option_value');
-
-        if (isset($option['value'])) {
-            foreach ($option['value'] as $optionId => $values) {
-                $intOptionId = (int)$optionId;
-                if (!empty($option['delete'][$optionId])) {
-                    if ($intOptionId) {
-                        $condition = ['option_id =?' => $intOptionId];
-                        $this->setup->getConnection()->delete($optionTable, $condition);
-                    }
-                    continue;
-                }
-
-                if (!$intOptionId) {
-                    $data = [
-                        'attribute_id' => $option['attribute_id'],
-                        'sort_order' => isset($option['order'][$optionId]) ? $option['order'][$optionId] : 0,
-                    ];
-                    $this->setup->getConnection()->insert($optionTable, $data);
-                    $intOptionId = $this->setup->getConnection()->lastInsertId($optionTable);
-                } else {
-                    $data = [
-                        'sort_order' => isset($option['order'][$optionId]) ? $option['order'][$optionId] : 0,
-                    ];
-                    $this->setup->getConnection()->update(
-                        $optionTable,
-                        $data,
-                        ['option_id=?' => $intOptionId]
-                    );
-                }
-
-                // Default value
-                if (!isset($values[0])) {
-                    throw new \Magento\Framework\Exception\LocalizedException(
-                        __("The default option isn't defined. Set the option and try again.")
-                    );
-                }
-                $condition = ['option_id =?' => $intOptionId];
-                $this->setup->getConnection()->delete($optionValueTable, $condition);
-                foreach ($values as $storeId => $value) {
-                    $data = ['option_id' => $intOptionId, 'store_id' => $storeId, 'value' => $value];
-                    $this->setup->getConnection()->insert($optionValueTable, $data);
-                }
-            }
-        } elseif (isset($option['values'])) {
-            foreach ($option['values'] as $sortOrder => $label) {
-                // add option
-                $data = ['attribute_id' => $option['attribute_id'], 'sort_order' => $sortOrder];
-                $this->setup->getConnection()->insert($optionTable, $data);
-                $intOptionId = $this->setup->getConnection()->lastInsertId($optionTable);
-
-                $data = ['option_id' => $intOptionId, 'store_id' => 0, 'value' => $label];
-                $this->setup->getConnection()->insert($optionValueTable, $data);
-            }
-        }
+        $this->addAttributeOption->execute($option);
     }
 
     /**
@@ -1546,6 +1514,17 @@ class EavSetup
             $errorMessage = implode('\n', $this->attributeCodeValidator->getMessages());
 
             throw new LocalizedException(__($errorMessage));
+        }
+
+        /* Actual attribute is created from data array for compatibility with reserved attribute validator logic */
+        $attribute = $this->attributeFactory->createAttribute(Attribute::class, $data);
+        if ($this->reservedAttributeChecker->isReservedAttribute($attribute)) {
+            throw new LocalizedException(
+                __(
+                    'The attribute code \'%1\' is reserved by system. Please try another attribute code',
+                    $attributeCode
+                )
+            );
         }
     }
 }

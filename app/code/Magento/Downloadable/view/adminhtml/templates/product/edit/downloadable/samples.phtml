@@ -5,8 +5,8 @@
  */
 
 // @deprecated
-?>
-<?php
+// phpcs:disable PHPCompatibility.Miscellaneous.RemovedAlternativePHPTags.MaybeASPOpenTagFound
+
 /**
  * @var $block \Magento\Downloadable\Block\Adminhtml\Catalog\Product\Edit\Tab\Downloadable\Links
  */
@@ -51,7 +51,7 @@ $block->getConfigJson();
                 </table>
             </div>
             <div class="admin__field-note">
-                <?= /* @noEscape */ __('Alphanumeric, dash and underscore characters are recommended for filenames. Improper characters are replaced with \'_\'.') ?>
+                <?= $block->escapeHtml(__('Alphanumeric, dash and underscore characters are recommended for filenames. Improper characters are replaced with \'_\'.')) ?>
             </div>
         </div>
     </div>

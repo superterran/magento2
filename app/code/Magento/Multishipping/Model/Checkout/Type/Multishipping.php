@@ -23,6 +23,7 @@ use Psr\Log\LoggerInterface;
  * @SuppressWarnings(PHPMD.TooManyFields)
  * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
+ * @SuppressWarnings(PHPMD.CookieAndSessionMisuse)
  * @since 100.0.2
  */
 class Multishipping extends \Magento\Framework\DataObject
@@ -507,8 +508,7 @@ class Multishipping extends \Magento\Framework\DataObject
     protected function _addShippingItem($quoteItemId, $data)
     {
         $qty = isset($data['qty']) ? (int)$data['qty'] : 1;
-        //$qty       = $qty > 0 ? $qty : 1;
-        $addressId = isset($data['address']) ? $data['address'] : false;
+        $addressId = isset($data['address']) ? (int)$data['address'] : false;
         $quoteItem = $this->getQuote()->getItemById($quoteItemId);
 
         if ($addressId && $quoteItem) {
@@ -526,6 +526,7 @@ class Multishipping extends \Magento\Framework\DataObject
             $quoteItem->setQty($quoteItem->getMultishippingQty());
             try {
                 $address = $this->addressRepository->getById($addressId);
+            // phpcs:ignore Magento2.CodeAnalysis.EmptyBlock
             } catch (\Exception $e) {
             }
             if (isset($address)) {
@@ -565,6 +566,7 @@ class Multishipping extends \Magento\Framework\DataObject
         }
         try {
             $address = $this->addressRepository->getById($addressId);
+        // phpcs:ignore Magento2.CodeAnalysis.EmptyBlock
         } catch (\Exception $e) {
             //
         }
@@ -592,6 +594,7 @@ class Multishipping extends \Magento\Framework\DataObject
         }
         try {
             $address = $this->addressRepository->getById($addressId);
+        // phpcs:ignore Magento2.CodeAnalysis.EmptyBlock
         } catch (\Exception $e) {
             //
         }
@@ -621,6 +624,7 @@ class Multishipping extends \Magento\Framework\DataObject
             $addressId = $address->getId();
             if (isset($methods[$addressId])) {
                 $address->setShippingMethod($methods[$addressId]);
+                $address->setCollectShippingRates(true);
             } elseif (!$address->getShippingMethod()) {
                 throw new \Magento\Framework\Exception\LocalizedException(
                     __('Set shipping methods for all addresses. Verify the shipping methods and try again.')
@@ -658,7 +662,9 @@ class Multishipping extends \Magento\Framework\DataObject
         $quote->getPayment()->importData($payment);
         // shipping totals may be affected by payment method
         if (!$quote->isVirtual() && $quote->getShippingAddress()) {
-            $quote->getShippingAddress()->setCollectShippingRates(true);
+            foreach ($quote->getAllShippingAddresses() as $shippingAddress) {
+                $shippingAddress->setCollectShippingRates(true);
+            }
             $quote->setTotalsCollectedFlag(false)->collectTotals();
         }
         $this->quoteRepository->save($quote);
@@ -686,6 +692,19 @@ class Multishipping extends \Magento\Framework\DataObject
             $order,
             $this->quoteAddressToOrder->convert($address)
         );
+
+        $shippingMethodCode = $address->getShippingMethod();
+        if ($shippingMethodCode) {
+            $rate = $address->getShippingRateByCode($shippingMethodCode);
+            $shippingPrice = $rate->getPrice();
+        } else {
+            $shippingPrice = $order->getShippingAmount();
+        }
+        $store = $order->getStore();
+        $amountPrice = $store->getBaseCurrency()
+            ->convert($shippingPrice, $store->getCurrentCurrencyCode());
+        $order->setBaseShippingAmount($shippingPrice);
+        $order->setShippingAmount($amountPrice);
 
         $order->setQuote($quote);
         $order->setBillingAddress($this->quoteAddressToOrderAddress->convert($quote->getBillingAddress()));
@@ -716,7 +735,7 @@ class Multishipping extends \Magento\Framework\DataObject
             );
             $orderItem = $this->quoteItemToOrderItem->convert($item);
             if ($item->getParentItem()) {
-                $orderItem->setParentItem($order->getItemByQuoteItemId($item->getParentItem()->getId()));
+                $orderItem->setParentItem($order->getItemByQuoteItemId($_quoteItem->getParentItem()->getId()));
             }
             $order->addItem($orderItem);
         }
@@ -825,7 +844,7 @@ class Multishipping extends \Magento\Framework\DataObject
                 if ($order->getCanSendNewEmailFlag()) {
                     $this->orderSender->send($order);
                 }
-                $placedAddressItems = array_merge($placedAddressItems, $this->getQuoteAddressItems($order));
+                $placedAddressItems = $this->getPlacedAddressItems($order);
             }
 
             $addressErrors = [];
@@ -955,7 +974,8 @@ class Multishipping extends \Magento\Framework\DataObject
                 \Magento\Store\Model\ScopeInterface::SCOPE_STORE
             );
         }
-        return $error;
+
+        return __($error);
     }
 
     /**
@@ -1090,11 +1110,15 @@ class Multishipping extends \Magento\Framework\DataObject
      */
     protected function isAddressIdApplicable($addressId)
     {
-        $applicableAddressIds = array_map(function ($address) {
-            /** @var \Magento\Customer\Api\Data\AddressInterface $address */
-            return $address->getId();
-        }, $this->getCustomer()->getAddresses());
-        return !is_numeric($addressId) || in_array($addressId, $applicableAddressIds);
+        $applicableAddressIds = array_map(
+            function ($address) {
+                /** @var \Magento\Customer\Api\Data\AddressInterface $address */
+                return $address->getId();
+            },
+            $this->getCustomer()->getAddresses()
+        );
+
+        return in_array($addressId, $applicableAddressIds);
     }
 
     /**
@@ -1160,7 +1184,9 @@ class Multishipping extends \Magento\Framework\DataObject
 
         $baseTotal = 0;
         foreach ($addresses as $address) {
-            $taxes = $taxInclude ? $address->getBaseTaxAmount() : 0;
+            $taxes = $taxInclude
+                ? $address->getBaseTaxAmount() + $address->getBaseDiscountTaxCompensationAmount()
+                : 0;
             $baseTotal += $address->getBaseSubtotalWithDiscount() + $taxes;
         }
 
@@ -1238,7 +1264,7 @@ class Multishipping extends \Magento\Framework\DataObject
             }
         }
 
-        throw new NotFoundException(__('Quote address for failed order not found.'));
+        throw new NotFoundException(__('Quote address for failed order ID "%1" not found.', $order->getEntityId()));
     }
 
     /**
@@ -1275,6 +1301,22 @@ class Multishipping extends \Magento\Framework\DataObject
         $placedAddressItems = [];
         foreach ($order->getItems() as $orderItem) {
             $placedAddressItems[] = $orderItem->getQuoteItemId();
+        }
+
+        return $placedAddressItems;
+    }
+
+    /**
+     * Returns placed address items
+     *
+     * @param OrderInterface $order
+     * @return array
+     */
+    private function getPlacedAddressItems(OrderInterface $order): array
+    {
+        $placedAddressItems = [];
+        foreach ($this->getQuoteAddressItems($order) as $key => $quoteAddressItem) {
+            $placedAddressItems[$key] = $quoteAddressItem;
         }
 
         return $placedAddressItems;

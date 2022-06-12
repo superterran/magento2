@@ -19,6 +19,7 @@ use Magento\Framework\Shell\ComplexParameter;
 use Magento\Setup\Application;
 use Magento\Setup\Console\CompilerPreparation;
 use Magento\Setup\Model\ObjectManagerProvider;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console;
 use Magento\Framework\Config\ConfigOptionsListConstants;
 
@@ -27,7 +28,8 @@ use Magento\Framework\Config\ConfigOptionsListConstants;
  *
  * This is the hood for all command line tools supported by Magento.
  *
- * @inheritdoc
+ * @api
+ *
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  */
 class Cli extends Console\Application
@@ -62,6 +64,11 @@ class Cli extends Console\Application
     private $objectManager;
 
     /**
+     * @var LoggerInterface
+     */
+    private $logger;
+
+    /**
      * @param string $name the application name
      * @param string $version the application version
      */
@@ -93,6 +100,8 @@ class Cli extends Console\Application
         }
 
         parent::__construct($name, $version);
+        $this->serviceManager->setService(\Symfony\Component\Console\Application::class, $this);
+        $this->logger = $this->objectManager->get(LoggerInterface::class);
     }
 
     /**
@@ -102,7 +111,14 @@ class Cli extends Console\Application
      */
     public function doRun(Console\Input\InputInterface $input, Console\Output\OutputInterface $output)
     {
-        $exitCode = parent::doRun($input, $output);
+        $exitCode = null;
+        try {
+            $exitCode = parent::doRun($input, $output);
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage() . PHP_EOL . $e->getTraceAsString();
+            $this->logger->error($errorMessage);
+            $this->initException = $e;
+        }
 
         if ($this->initException) {
             throw $this->initException;
@@ -159,7 +175,6 @@ class Cli extends Console\Application
     {
         $params = (new ComplexParameter(self::INPUT_KEY_BOOTSTRAP))->mergeFromArgv($_SERVER, $_SERVER);
         $params[Bootstrap::PARAM_REQUIRE_MAINTENANCE] = null;
-        $params = $this->documentRootResolver($params);
         $requestParams = $this->serviceManager->get('magento-init-params');
         $appBootstrapKey = Bootstrap::INIT_PARAM_FILESYSTEM_DIR_PATHS;
 
@@ -209,35 +224,10 @@ class Cli extends Console\Application
         $commands = [];
         foreach (CommandLocator::getCommands() as $commandListClass) {
             if (class_exists($commandListClass)) {
-                $commands = array_merge(
-                    $commands,
-                    $objectManager->create($commandListClass)->getCommands()
-                );
+                $commands[] = $objectManager->create($commandListClass)->getCommands();
             }
         }
 
-        return $commands;
-    }
-
-    /**
-     * Provides updated configuration in accordance to document root settings.
-     *
-     * @param array $config
-     * @return array
-     */
-    private function documentRootResolver(array $config = []): array
-    {
-        $params = [];
-        $deploymentConfig = $this->serviceManager->get(DeploymentConfig::class);
-        if ((bool)$deploymentConfig->get(ConfigOptionsListConstants::CONFIG_PATH_DOCUMENT_ROOT_IS_PUB)) {
-            $params[Bootstrap::INIT_PARAM_FILESYSTEM_DIR_PATHS] = [
-                DirectoryList::PUB => [DirectoryList::URL_PATH => ''],
-                DirectoryList::MEDIA => [DirectoryList::URL_PATH => 'media'],
-                DirectoryList::STATIC_VIEW => [DirectoryList::URL_PATH => 'static'],
-                DirectoryList::UPLOAD => [DirectoryList::URL_PATH => 'media/upload'],
-            ];
-        }
-
-        return array_merge_recursive($config, $params);
+        return array_merge([], ...$commands);
     }
 }

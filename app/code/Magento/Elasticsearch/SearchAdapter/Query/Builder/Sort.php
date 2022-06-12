@@ -74,10 +74,20 @@ class Sort
      *
      * @param RequestInterface $request
      * @return array
+     *
+     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
+     * @SuppressWarnings(PHPMD.NPathComplexity)
      */
     public function getSort(RequestInterface $request)
     {
         $sorts = [];
+        /**
+         * Temporary solution for an existing interface of a fulltext search request in Backward compatibility purposes.
+         * Scope to split Search request interface on two different 'Search' and 'Fulltext Search' contains in MC-16461.
+         */
+        if (!method_exists($request, 'getSort')) {
+            return $sorts;
+        }
         foreach ($request->getSort() as $item) {
             if (in_array($item['field'], $this->skippedFields)) {
                 continue;
@@ -87,7 +97,18 @@ class Sort
             if (isset($this->map[$fieldName])) {
                 $fieldName = $this->map[$fieldName];
             }
-            if ($attribute->isSortable() && !($attribute->isFloatType() || $attribute->isIntegerType())) {
+            if ($attribute->isSortable() &&
+                !$attribute->isComplexType() &&
+                !($attribute->isFloatType() || $attribute->isIntegerType())
+            ) {
+                $suffix = $this->fieldNameResolver->getFieldName(
+                    $attribute,
+                    ['type' => FieldMapperInterface::TYPE_SORT]
+                );
+                $fieldName .= '.' . $suffix;
+            }
+            if ($attribute->isComplexType() && $attribute->isSortable()) {
+                $fieldName .= '_value';
                 $suffix = $this->fieldNameResolver->getFieldName(
                     $attribute,
                     ['type' => FieldMapperInterface::TYPE_SORT]
@@ -96,7 +117,7 @@ class Sort
             }
             $sorts[] = [
                 $fieldName => [
-                    'order' => strtolower($item['direction'])
+                    'order' => strtolower($item['direction'] ?? '')
                 ]
             ];
         }

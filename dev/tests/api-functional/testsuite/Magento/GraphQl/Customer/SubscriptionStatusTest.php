@@ -29,7 +29,7 @@ class SubscriptionStatusTest extends GraphQlAbstract
      */
     private $subscriberFactory;
 
-    protected function setUp()
+    protected function setUp(): void
     {
         parent::setUp();
 
@@ -57,11 +57,12 @@ QUERY;
     }
 
     /**
-     * @expectedException Exception
-     * @expectedExceptionMessage The current customer isn't authorized.
      */
     public function testGetSubscriptionStatusIfUserIsNotAuthorizedTest()
     {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('The current customer isn\'t authorized.');
+
         $query = <<<QUERY
 query {
     customer {
@@ -103,11 +104,12 @@ QUERY;
     }
 
     /**
-     * @expectedException Exception
-     * @expectedExceptionMessage The current customer isn't authorized.
      */
     public function testChangeSubscriptionStatuIfUserIsNotAuthorizedTest()
     {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('The current customer isn\'t authorized.');
+
         $query = <<<QUERY
 mutation {
     updateCustomer(
@@ -150,6 +152,39 @@ QUERY;
     }
 
     /**
+     * @magentoConfigFixture default_store customer/account_share/scope 0
+     * @magentoApiDataFixture Magento/Customer/_files/customer_for_second_website_with_address.php
+     */
+    public function testSubscriptionStatusInMultiWebsiteSetup(): void
+    {
+        $currentEmail = 'customer_second_ws_with_addr@example.com';
+        $currentPassword = 'Apassword1';
+
+        $query = <<<QUERY
+            mutation {
+                updateCustomer(
+                    input: {
+                        is_subscribed: true
+                    }
+                ) {
+                    customer {
+                        is_subscribed
+                    }
+                }
+            }
+        QUERY;
+        $headers = [
+            'Store' => 'default',
+            'Authorization' => sprintf(
+                'Bearer %s',
+                $this->customerTokenService->createCustomerAccessToken($currentEmail, $currentPassword)
+            ),
+        ];
+        $response = $this->graphQlMutation($query, [], '', $headers);
+        $this->assertTrue($response['updateCustomer']['customer']['is_subscribed']);
+    }
+
+    /**
      * @param string $email
      * @param string $password
      *
@@ -162,7 +197,7 @@ QUERY;
         return ['Authorization' => 'Bearer ' . $customerToken];
     }
 
-    protected function tearDown()
+    protected function tearDown(): void
     {
         parent::tearDown();
 

@@ -3,10 +3,21 @@
  * Copyright © Magento, Inc. All rights reserved.
  * See COPYING.txt for license details.
  */
+declare(strict_types=1);
+
 namespace Magento\Catalog\Model\ResourceModel\Product;
 
+use Magento\Catalog\Model\Product\Visibility;
+use Magento\Framework\App\Area;
+use Magento\Framework\App\State;
+use Magento\Store\Model\Store;
+use Magento\TestFramework\Fixture\DataFixtureStorageManager;
+use Magento\TestFramework\Helper\Bootstrap;
+
 /**
- * Collection test
+ * Test for Magento\Catalog\Model\ResourceModel\Product\Collection
+ *
+ * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  */
 class CollectionTest extends \PHPUnit\Framework\TestCase
 {
@@ -26,22 +37,28 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
     private $productRepository;
 
     /**
+     * @var \Magento\TestFramework\Fixture\DataFixtureStorage
+     */
+    private $fixtures;
+
+    /**
      * Sets up the fixture, for example, opens a network connection.
      * This method is called before a test is executed.
      */
-    protected function setUp()
+    protected function setUp(): void
     {
-        $this->collection = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->create(
+        $this->collection = Bootstrap::getObjectManager()->create(
             \Magento\Catalog\Model\ResourceModel\Product\Collection::class
         );
 
-        $this->processor = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->create(
+        $this->processor = Bootstrap::getObjectManager()->create(
             \Magento\Catalog\Model\Indexer\Product\Price\Processor::class
         );
 
-        $this->productRepository = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->create(
+        $this->productRepository = Bootstrap::getObjectManager()->create(
             \Magento\Catalog\Api\ProductRepositoryInterface::class
         );
+        $this->fixtures = Bootstrap::getObjectManager()->get(DataFixtureStorageManager::class)->getStorage();
     }
 
     /**
@@ -54,7 +71,7 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
         $this->processor->getIndexer()->setScheduled(true);
         $this->assertTrue($this->processor->getIndexer()->isScheduled());
 
-        $productRepository = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()
+        $productRepository = Bootstrap::getObjectManager()
             ->create(\Magento\Catalog\Api\ProductRepositoryInterface::class);
         /** @var \Magento\Catalog\Api\Data\ProductInterface $product */
         $product = $productRepository->get('simple');
@@ -73,7 +90,7 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
         //reindexing
         $this->processor->getIndexer()->reindexList([1]);
 
-        $this->collection = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()->create(
+        $this->collection = Bootstrap::getObjectManager()->create(
             \Magento\Catalog\Model\ResourceModel\Product\Collection::class
         );
         $this->collection->addPriceData(0, 1);
@@ -94,11 +111,84 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
      * @magentoAppIsolation enabled
      * @magentoDbIsolation disabled
      */
+    public function testSetVisibility()
+    {
+        $appState = Bootstrap::getObjectManager()
+            ->create(State::class);
+        $appState->setAreaCode(Area::AREA_CRONTAB);
+        $this->collection->setStoreId(Store::DEFAULT_STORE_ID);
+        $this->collection->setVisibility([Visibility::VISIBILITY_BOTH]);
+        $this->collection->load();
+        /** @var \Magento\Catalog\Api\Data\ProductInterface[] $product */
+        $items = $this->collection->getItems();
+        $this->assertCount(2, $items);
+    }
+
+    /**
+     * @magentoDataFixture Magento/Catalog/_files/category_product.php
+     * @magentoAppIsolation enabled
+     * @magentoDbIsolation disabled
+     */
+    public function testSetCategoryWithStoreFilter()
+    {
+        $appState = Bootstrap::getObjectManager()
+            ->create(State::class);
+        $appState->setAreaCode(Area::AREA_CRONTAB);
+
+        $category = \Magento\Framework\App\ObjectManager::getInstance()->get(
+            \Magento\Catalog\Model\Category::class
+        )->load(333);
+        $this->collection->addCategoryFilter($category)->addStoreFilter(1);
+        $this->collection->load();
+
+        $collectionStoreFilterAfter = Bootstrap::getObjectManager()->create(
+            \Magento\Catalog\Model\ResourceModel\Product\CollectionFactory::class
+        )->create();
+        $collectionStoreFilterAfter->addStoreFilter(1)->addCategoryFilter($category);
+        $collectionStoreFilterAfter->load();
+        $this->assertEquals($this->collection->getItems(), $collectionStoreFilterAfter->getItems());
+        $this->assertCount(1, $collectionStoreFilterAfter->getItems());
+    }
+
+    /**
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Category as:c1
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Category with:{"parent_id":"$c1.id$","is_anchor":0} as:c11
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Category with:{"parent_id":"$c1.id$","is_anchor":0} as:c12
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Category with:{"parent_id":"$c11.id$"} as:c111
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Category as:c2
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Product with:{"category_ids":["$c1.id$"]} as:p1
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Product with:{"category_ids":["$c111.id$"]} as:p2
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Product with:{"category_ids":["$c12.id$"]} as:p3
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Product with:{"category_ids":["$c2.id$"]} as:p4
+     * @magentoDataFixture Magento\Catalog\Test\Fixture\Product with:{"category_ids":["$c2.id$"]} as:p5
+     * @magentoAppIsolation enabled
+     * @magentoDbIsolation disabled
+     */
+    public function testSetCategoryFilter()
+    {
+        $categoryId = $this->fixtures->get('c1')->getId();
+        $appState = Bootstrap::getObjectManager()
+            ->create(State::class);
+        $appState->setAreaCode(Area::AREA_CRONTAB);
+
+        $category = \Magento\Framework\App\ObjectManager::getInstance()->get(
+            \Magento\Catalog\Model\Category::class
+        )->load($categoryId);
+        $this->collection->addCategoryFilter($category);
+        $this->collection->load();
+        $this->assertEquals($this->collection->getSize(), 3);
+    }
+
+    /**
+     * @magentoDataFixture Magento/Catalog/_files/products.php
+     * @magentoAppIsolation enabled
+     * @magentoDbIsolation disabled
+     */
     public function testAddPriceDataOnSave()
     {
         $this->processor->getIndexer()->setScheduled(false);
         $this->assertFalse($this->processor->getIndexer()->isScheduled());
-        $productRepository = \Magento\TestFramework\Helper\Bootstrap::getObjectManager()
+        $productRepository = Bootstrap::getObjectManager()
             ->create(\Magento\Catalog\Api\ProductRepositoryInterface::class);
         /** @var \Magento\Catalog\Api\Data\ProductInterface $product */
         $product = $productRepository->get('simple');
@@ -133,26 +223,23 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
     /**
      * Test addAttributeToSort() with attribute 'is_saleable' works properly on frontend.
      *
-     * @dataProvider addAttributeToSortDataProvider
+     * @dataProvider addIsSaleableAttributeToSortDataProvider
      * @magentoDataFixture Magento/Catalog/_files/multiple_products_with_non_saleable_product.php
      * @magentoConfigFixture current_store cataloginventory/options/show_out_of_stock 1
      * @magentoAppIsolation enabled
      * @magentoAppArea frontend
      */
-    public function testAddAttributeToSort(string $productSku, string $order)
+    public function testAddIsSaleableAttributeToSort(string $productSku, string $order)
     {
-        /** @var Collection $productCollection */
         $this->collection->addAttributeToSort('is_saleable', $order);
-        self::assertEquals(2, $this->collection->count());
-        self::assertSame($productSku, $this->collection->getFirstItem()->getSku());
+        $this->assertEquals(2, $this->collection->count());
+        $this->assertEquals($productSku, $this->collection->getFirstItem()->getSku());
     }
 
     /**
-     * Provide test data for testAddAttributeToSort().
-     *
      * @return array
      */
-    public function addAttributeToSortDataProvider()
+    public function addIsSaleableAttributeToSortDataProvider(): array
     {
         return [
             [
@@ -161,6 +248,42 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
             ],
             [
                 'product_sku' => 'simple_not_saleable',
+                'order' => Collection::SORT_ORDER_ASC,
+            ]
+        ];
+    }
+
+    /**
+     * Test addAttributeToSort() with attribute 'price' works properly on frontend.
+     *
+     * @dataProvider addPriceAttributeToSortDataProvider
+     * @magentoDataFixture Magento/Catalog/_files/product_simple.php
+     * @magentoDataFixture Magento/Catalog/_files/simple_product_with_tier_price_equal_zero.php
+     * @magentoAppIsolation enabled
+     * @magentoDbIsolation disabled
+     * @magentoAppArea frontend
+     */
+    public function testAddPriceAttributeToSort(string $productSku, string $order)
+    {
+        $this->processor->getIndexer()->reindexAll();
+        $this->collection->setStoreId(1);
+        $this->collection->addAttributeToSort('price', $order);
+        $this->assertEquals(2, $this->collection->count());
+        $this->assertEquals($productSku, $this->collection->getFirstItem()->getSku());
+    }
+
+    /**
+     * @return array
+     */
+    public function addPriceAttributeToSortDataProvider(): array
+    {
+        return [
+            [
+                'product_sku' => 'simple',
+                'order' => Collection::SORT_ORDER_DESC,
+            ],
+            [
+                'product_sku' => 'simple-2',
                 'order' => Collection::SORT_ORDER_ASC,
             ]
         ];
@@ -184,12 +307,12 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
         $productTable = $this->collection->getTable('catalog_product_entity');
         $urlRewriteTable = $this->collection->getTable('url_rewrite');
 
-        // phpcs:ignore
+        // phpcs:ignore Magento2.SQL.RawQuery
         $expected = 'SELECT `e`.*, `alias`.`request_path` FROM `' . $productTable . '` AS `e`'
             . ' LEFT JOIN `' . $urlRewriteTable . '` AS `alias` ON (alias.entity_id =e.entity_id)'
             . ' AND (alias.entity_type = \'product\')';
 
-        self::assertContains($expected, str_replace(PHP_EOL, '', $sql));
+        self::assertStringContainsString($expected, str_replace(PHP_EOL, '', $sql));
     }
 
     /**
@@ -204,15 +327,57 @@ class CollectionTest extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * Add tier price attribute filter to collection
+     * Add tier price attribute filter to collection with different condition types.
      *
+     * @param mixed $condition
      * @magentoDataFixture Magento/Catalog/Model/ResourceModel/_files/few_simple_products.php
      * @magentoDataFixture Magento/Catalog/Model/ResourceModel/_files/product_simple.php
+     *
+     * @dataProvider addAttributeTierPriceToFilterDataProvider
      */
-    public function testAddAttributeTierPriceToFilter(): void
+    public function testAddAttributeTierPriceToFilter($condition): void
     {
-        $this->assertEquals(11, $this->collection->getSize());
-        $this->collection->addAttributeToFilter('tier_price', ['gt' => 0]);
-        $this->assertEquals(1, $this->collection->getSize());
+        $size = $this->collection->addAttributeToFilter('tier_price', $condition)->getSize();
+        $this->assertEquals(1, $size);
+    }
+
+    /**
+     * @return array
+     */
+    public function addAttributeTierPriceToFilterDataProvider(): array
+    {
+        return [
+            'condition is array' => [['eq' => 8]],
+            'condition is string' => ['8'],
+            'condition is int' => [8],
+            'condition is null' => [null]
+        ];
+    }
+
+    /**
+     * Add is_saleable attribute filter to collection with different condition types.
+     *
+     * @param mixed $condition
+     * @magentoDataFixture Magento/Catalog/Model/ResourceModel/_files/product_simple.php
+     *
+     * @dataProvider addAttributeIsSaleableToFilterDataProvider
+     */
+    public function testAddAttributeIsSaleableToFilter($condition): void
+    {
+        $size = $this->collection->addAttributeToFilter('is_saleable', $condition)->getSize();
+        $this->assertEquals(1, $size);
+    }
+
+    /**
+     * @return array
+     */
+    public function addAttributeIsSaleableToFilterDataProvider(): array
+    {
+        return [
+            'condition is array' => [['eq' => 1]],
+            'condition is string' => ['1'],
+            'condition is int' => [1],
+            'condition is null' => [null]
+        ];
     }
 }
